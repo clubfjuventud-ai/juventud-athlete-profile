@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 from datetime import date
 
 import streamlit as st
@@ -9,7 +10,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, Image as PDFImage
 
 
 # ============================================================
@@ -21,6 +22,13 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+BASE_DIR = Path(__file__).resolve().parent
+ASSETS_DIR = BASE_DIR / "assets"
+LOGO_JUVENTUD = ASSETS_DIR / "logo_juventud.png"
+LOGO_SURCOS = ASSETS_DIR / "logo_surcos.png"
+INSTITUCION_JUVENTUD = "Club Juventud"
+INSTITUCION_SURCOS = "Colegio Surcos"
 
 NEGRO = "#101114"
 NEGRO_CARD = "#191B20"
@@ -94,12 +102,26 @@ def obtener_jugadores(supabase):
         .select(
             "id, nombres, apellidos, fecha_nacimiento, curso, posicion_principal, "
             "posicion_secundaria, pie_dominante, estatura, peso, fotografia_url, "
-            "estado, categoria_id, categorias(nombre)"
+            "estado, categoria_id, institucion, categorias(nombre)"
         )
         .order("apellidos")
         .execute()
     )
     return respuesta.data or []
+
+
+def ruta_logo(institucion):
+    """Devuelve el archivo de logo correspondiente si está instalado en assets/."""
+    ruta = LOGO_SURCOS if institucion == INSTITUCION_SURCOS else LOGO_JUVENTUD
+    return ruta if ruta.exists() else None
+
+
+def mostrar_marca(institucion=INSTITUCION_JUVENTUD, ancho=120):
+    ruta = ruta_logo(institucion)
+    if ruta:
+        st.image(str(ruta), width=ancho)
+    else:
+        st.markdown(f"**{institucion.upper()}**")
 
 
 def nombre_jugador(jugador):
@@ -160,11 +182,19 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
         name="TextoPequeno", parent=estilos["BodyText"], fontName="Helvetica",
         fontSize=8.5, leading=11, textColor=colors.HexColor("#333333"),
     ))
-    elementos = [
-        Paragraph("CLUB FORMATIVO DEPORTIVO ESPECIALIZADO", estilos["Marca"]),
-        Paragraph("JUVENTUD", estilos["TituloClub"]),
-        Paragraph("EXPEDIENTE DEL ESTUDIANTE-ATLETA · USO INTERNO", estilos["SubtituloClub"]),
-    ]
+    institucion = jugador.get("institucion") or INSTITUCION_JUVENTUD
+    nombre_marca = "COLEGIO SURCOS" if institucion == INSTITUCION_SURCOS else "CLUB JUVENTUD"
+    logo = ruta_logo(institucion)
+    elementos = []
+    if logo:
+        imagen_logo = PDFImage(str(logo), width=3.0 * cm, height=3.0 * cm, kind="bound", hAlign="CENTER")
+        elementos.append(imagen_logo)
+        elementos.append(Spacer(1, 4))
+    elementos.extend([
+        Paragraph(nombre_marca, estilos["Marca"]),
+        Paragraph("EXPEDIENTE DEL ESTUDIANTE-ATLETA", estilos["TituloClub"]),
+        Paragraph(f"{institucion.upper()} · DOCUMENTO DE USO INTERNO", estilos["SubtituloClub"]),
+    ])
 
     def tabla_datos(filas, anchos=None):
         datos = [[Paragraph(f"<b>{a}</b>", estilos["TextoPequeno"]), Paragraph(str(b or "No registrado"), estilos["TextoPequeno"])] for a, b in filas]
@@ -287,9 +317,13 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
 if "sesion" not in st.session_state:
     st.session_state.sesion = None
 
-st.markdown('<div class="eyebrow">Club Formativo Deportivo Especializado</div>', unsafe_allow_html=True)
-st.title("⚽ Juventud Athlete Profile")
-st.caption("Sistema de gestión y desarrollo del estudiante-atleta")
+cab_logo, cab_texto = st.columns([1, 5])
+with cab_logo:
+    mostrar_marca(INSTITUCION_JUVENTUD, ancho=110)
+with cab_texto:
+    st.markdown('<div class="eyebrow">Club Formativo Deportivo Especializado</div>', unsafe_allow_html=True)
+    st.title("Juventud Athlete Profile")
+    st.caption("Sistema de gestión y desarrollo del estudiante-atleta")
 
 # ============================================================
 # LOGIN
@@ -362,14 +396,14 @@ rol_padre = rol == "padre"
 # ============================================================
 # NAVEGACIÓN
 # ============================================================
-st.sidebar.markdown("## ⚽ CLUB JUVENTUD")
+mostrar_marca(INSTITUCION_JUVENTUD, ancho=145)
 st.sidebar.caption("JUVENTUD CON PROPÓSITO Y FUTURO")
 st.sidebar.write(f"**{nombre}**")
 st.sidebar.caption(f"Rol: {rol.capitalize()}")
 st.sidebar.divider()
 seccion = st.sidebar.radio(
     "MENÚ PRINCIPAL",
-    ["Inicio", "Deportistas", "Evaluaciones", "Asistencia", "Competencias", "Usuarios y representantes"],
+    ["Inicio", "Jugadores Juventud", "Colegio Surcos", "Evaluaciones", "Asistencia", "Competencias", "Usuarios y representantes"],
     key="menu_principal",
 )
 st.sidebar.divider()
@@ -414,8 +448,11 @@ if seccion == "Inicio":
 # ============================================================
 # DEPORTISTAS
 # ============================================================
-elif seccion == "Deportistas":
-    encabezado_seccion("👥 Gestión de deportistas", "Registro, consulta y expediente individual.")
+elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
+    institucion_actual = INSTITUCION_SURCOS if seccion == "Colegio Surcos" else INSTITUCION_JUVENTUD
+    jugadores = [j for j in jugadores if (j.get("institucion") or INSTITUCION_JUVENTUD) == institucion_actual]
+    mostrar_marca(institucion_actual, ancho=150)
+    encabezado_seccion(f"👥 {seccion}", f"Registro, consulta y expedientes individuales de {institucion_actual}.")
     tab_registro, tab_consulta, tab_expediente = st.tabs(["➕ Registrar", "📋 Consultar", "🗂️ Expediente individual"])
 
     # Categorías activas
@@ -433,6 +470,8 @@ elif seccion == "Deportistas":
             st.warning("No hay categorías activas disponibles. Revisa la tabla categorias en Supabase.")
         else:
             with st.form("formulario_deportista", clear_on_submit=True):
+                st.markdown(f"#### Registro para: {institucion_actual}")
+                st.caption("La institución se asigna automáticamente según el apartado en el que estás registrando al jugador.")
                 st.markdown("#### Datos personales")
                 c1, c2 = st.columns(2)
                 nombres = c1.text_input("Nombres *")
@@ -457,6 +496,7 @@ elif seccion == "Deportistas":
                     st.error("Completa los nombres, apellidos y categoría.")
                 else:
                     payload = {
+                        "institucion": institucion_actual,
                         "nombres": nombres.strip(), "apellidos": apellidos.strip(),
                         "fecha_nacimiento": fecha_nacimiento.isoformat(),
                         "categoria_id": mapa_categorias[categoria_nombre],
@@ -731,7 +771,12 @@ elif seccion == "Deportistas":
                                     st.error("No se pudo guardar la evidencia. Verifica las políticas de acceso.")
 
             with tab_pdf:
-                st.markdown("#### Generar expediente descargable")
+                st.markdown(f"#### Generar expediente descargable · {jugador.get('institucion') or INSTITUCION_JUVENTUD}")
+                logo_pdf = ruta_logo(jugador.get("institucion") or INSTITUCION_JUVENTUD)
+                if logo_pdf:
+                    st.caption("El PDF utilizará el logo de la institución correspondiente.")
+                else:
+                    st.warning("Aún falta subir el archivo del logo de esta institución a la carpeta assets del repositorio. El PDF se generará sin imagen de logo hasta entonces.")
                 st.warning("El PDF puede contener datos personales de un menor. Guárdalo de forma segura y compártelo únicamente con autorización del representante legal y con destinatarios autorizados.")
                 incluir_academico_pdf = st.checkbox("Incluir historial académico (información confidencial)", value=False)
                 incluir_eval_pdf = st.checkbox("Incluir evaluaciones integrales (información confidencial)", value=False)
@@ -740,7 +785,8 @@ elif seccion == "Deportistas":
                     incluir_eval_pdf = False
                 try:
                     pdf_bytes = generar_pdf(jugador, hist_acad, hist_dep, evals, evidencias, incluir_academico_pdf, incluir_eval_pdf)
-                    nombre_archivo = f"expediente_juventud_{jugador.get('apellidos','').replace(' ','_')}_{jugador.get('nombres','').replace(' ','_')}.pdf"
+                    prefijo_pdf = "surcos" if (jugador.get("institucion") or INSTITUCION_JUVENTUD) == INSTITUCION_SURCOS else "juventud"
+                    nombre_archivo = f"expediente_{prefijo_pdf}_{jugador.get('apellidos','').replace(' ','_')}_{jugador.get('nombres','').replace(' ','_')}.pdf"
                     st.download_button("⬇️ Descargar expediente PDF", data=pdf_bytes, file_name=nombre_archivo, mime="application/pdf", use_container_width=True)
                 except Exception:
                     st.error("No se pudo generar el PDF. Revisa que reportlab esté instalado en requirements.txt.")
