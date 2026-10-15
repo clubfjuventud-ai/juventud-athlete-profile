@@ -45,10 +45,35 @@ if st.session_state.sesion is None:
             st.error("No se pudo iniciar sesión. Verifica tus credenciales.")
 
 else:
-    usuario = st.session_state.sesion.user
+    
+usuario = st.session_state.sesion.user
 
-    st.success("Sesión iniciada correctamente.")
-    st.write(f"Correo: {usuario.email}")
+st.success("Sesión iniciada correctamente.")
+st.write(f"Correo: {usuario.email}")
+
+try:
+    resultado = (
+        supabase.table("perfiles")
+        .select("nombre_completo, rol, activo")
+        .eq("id", str(usuario.id))
+        .maybe_single()
+        .execute()
+    )
+
+    perfil = resultado.data
+
+    if perfil and perfil["activo"]:
+        st.info(f"Rol: {perfil['rol'].capitalize()}")
+        st.write(f"Nombre: {perfil['nombre_completo']}")
+    else:
+        st.warning(
+            "Tu cuenta no tiene un perfil activo. "
+            "Contacta al administrador."
+        )
+
+except Exception:
+    st.error("No se pudo consultar tu perfil.")
+
 
     if st.button("Cerrar sesión"):
         try:
