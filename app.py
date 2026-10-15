@@ -1,6 +1,9 @@
 import io
+import re
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
+
+import pandas as pd
 
 import streamlit as st
 from supabase import create_client
@@ -100,9 +103,9 @@ def obtener_jugadores(supabase):
     respuesta = (
         supabase.table("jugadores")
         .select(
-            "id, nombres, apellidos, fecha_nacimiento, curso, posicion_principal, "
-            "posicion_secundaria, pie_dominante, estatura, peso, fotografia_url, "
-            "estado, categoria_id, institucion, categorias(nombre)"
+            "id, codigo_jugador, cedula, nombres, apellidos, fecha_nacimiento, fecha_ingreso, curso, "
+            "posicion_principal, posicion_secundaria, pie_dominante, estatura, peso, fotografia_url, "
+            "nivel_competitivo, estado, categoria_id, institucion, categorias(nombre, edad_minima, edad_maxima)"
         )
         .order("apellidos")
         .execute()
@@ -133,6 +136,55 @@ def categoria_jugador(jugador):
     if isinstance(categoria, list):
         categoria = categoria[0] if categoria else None
     return (categoria or {}).get("nombre", "Sin categoría")
+
+def obtener_edad(fecha_nacimiento, fecha_referencia=None):
+    # Categoría por año de nacimiento: criterio de temporada deportiva.
+    fecha_referencia = fecha_referencia or date.today()
+    return fecha_referencia.year - fecha_nacimiento.year
+
+
+def categoria_por_fecha(fecha_nacimiento, categorias):
+    """Busca por rangos de edad y, si no están configurados, usa nombres como Sub-8/Sub-10."""
+    edad = obtener_edad(fecha_nacimiento)
+    for categoria in categorias:
+        minimo = categoria.get("edad_minima")
+        maximo = categoria.get("edad_maxima")
+        if minimo is not None and maximo is not None and int(minimo) <= edad <= int(maximo):
+            return categoria
+    # Alternativa para categorías típicas Sub-8, Sub-10, Sub-12, Sub-14 y Sub-16.
+    categorias_con_limite = []
+    for categoria in categorias:
+        match = re.search(r"sub\s*[- ]?\s*(\d+)", str(categoria.get("nombre", "")), re.IGNORECASE)
+        if match:
+            categorias_con_limite.append((int(match.group(1)), categoria))
+    for limite, categoria in sorted(categorias_con_limite, key=lambda item: item[0]):
+        if edad <= limite:
+            return categoria
+    return None
+
+
+def grafico_evolucion(registros, campos, titulo, ylabel=None):
+    """Dibuja evolución cronológica solo cuando existen datos para esas métricas."""
+    puntos = []
+    for registro in sorted(registros, key=lambda x: str(x.get("fecha_evaluacion") or "")):
+        fila = {"Fecha": str(registro.get("fecha_evaluacion") or "")}
+        for campo, etiqueta in campos:
+            valor = registro.get(campo)
+            if valor is not None:
+                try:
+                    fila[etiqueta] = float(valor)
+                except (TypeError, ValueError):
+                    pass
+        if len(fila) > 1:
+            puntos.append(fila)
+    if puntos:
+        df = pd.DataFrame(puntos).set_index("Fecha")
+        st.markdown(f"**{titulo}**")
+        st.line_chart(df, height=260)
+        if ylabel:
+            st.caption(ylabel)
+    else:
+        st.caption(f"El gráfico de {titulo.lower()} aparecerá cuando haya resultados registrados en más de una fecha.")
 
 
 def fecha_legible(valor):
@@ -213,8 +265,11 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
 
     elementos.append(Paragraph("1. DATOS DEL DEPORTISTA", estilos["SeccionClub"]))
     elementos.append(tabla_datos([
+        ("Código del jugador", jugador.get("codigo_jugador")),
+        ("Cédula", jugador.get("cedula")),
         ("Nombre completo", nombre_jugador(jugador)),
         ("Fecha de nacimiento", fecha_legible(jugador.get("fecha_nacimiento"))),
+        ("Fecha de ingreso", fecha_legible(jugador.get("fecha_ingreso"))),
         ("Categoría", categoria_jugador(jugador)),
         ("Curso escolar", jugador.get("curso")),
         ("Posición principal", jugador.get("posicion_principal")),
@@ -222,6 +277,7 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
         ("Pie dominante", jugador.get("pie_dominante")),
         ("Estatura (cm)", jugador.get("estatura")),
         ("Peso (kg)", jugador.get("peso")),
+        ("Nivel competitivo", jugador.get("nivel_competitivo")),
         ("Estado", jugador.get("estado")),
     ]))
 
@@ -251,7 +307,7 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
                 elementos.append(KeepTogether([
                     Paragraph(f"<b>Periodo:</b> {registro.get('periodo_academico') or '—'} · <b>Curso:</b> {registro.get('curso') or '—'} · <b>Promedio:</b> {registro.get('promedio') or '—'}", estilos["TextoPequeno"]),
                     Paragraph(f"Materias destacadas: {registro.get('materias_destacadas') or '—'}", estilos["TextoPequeno"]),
-                    Paragraph(f"Reconocimientos: {registro.get('reconocimientos') or '—'} · Idiomas: {registro.get('idiomas') or '—'}", estilos["TextoPequeno"]),
+                    Paragraph(f"Reconocimientos: {registro.get('reconocimientos') or '—'} · Inglés: {registro.get('ingles') or '—'} · Comportamiento: {registro.get('comportamiento') if registro.get('comportamiento') is not None else '—'} · Otros idiomas: {registro.get('idiomas') or '—'}", estilos["TextoPequeno"]),
                     Spacer(1, 6),
                 ]))
         else:
@@ -263,10 +319,18 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
             for ev in evaluaciones:
                 elementos.append(Paragraph(f"<b>Fecha:</b> {fecha_legible(ev.get('fecha_evaluacion'))}", estilos["TextoPequeno"]))
                 metricas = [
-                    ("Técnica", ev.get("tecnica")), ("Táctica", ev.get("tactica")),
-                    ("Toma de decisiones", ev.get("toma_decisiones")), ("Condición física", ev.get("condicion_fisica")),
-                    ("Actitud y mentalidad", ev.get("actitud_mentalidad")), ("Aprendizaje", ev.get("capacidad_aprendizaje")),
-                    ("Adaptabilidad", ev.get("adaptabilidad")), ("Rendimiento competitivo", ev.get("rendimiento_competitivo")),
+                    ("Efectividad de pase (1-10)", ev.get("pase_efectividad")),
+                    ("Conducción (1-10)", ev.get("conduccion")),
+                    ("Efectividad de tiros al arco (1-10)", ev.get("tiros_efectividad")),
+                    ("Velocidad 10 m (segundos)", ev.get("velocidad_10m")),
+                    ("Velocidad 20 m (segundos)", ev.get("velocidad_20m")),
+                    ("Illinois (segundos)", ev.get("illinois")),
+                    ("Course Navette (nivel/etapa)", ev.get("course_navette")),
+                    ("Disciplina (1-10)", ev.get("disciplina")),
+                    ("Compromiso (1-10)", ev.get("compromiso")),
+                    ("Responsabilidad (1-10)", ev.get("responsabilidad")),
+                    ("Trabajo en equipo (1-10)", ev.get("trabajo_equipo")),
+                    ("Capacidad de esfuerzo (1-10)", ev.get("capacidad_esfuerzo")),
                 ]
                 elementos.append(tabla_datos([(a, b if b is not None else "—") for a, b in metricas]))
                 elementos.append(Paragraph(f"Fortalezas: {ev.get('fortalezas') or '—'}", estilos["TextoPequeno"]))
@@ -403,7 +467,7 @@ st.sidebar.caption(f"Rol: {rol.capitalize()}")
 st.sidebar.divider()
 seccion = st.sidebar.radio(
     "MENÚ PRINCIPAL",
-    ["Inicio", "Jugadores Juventud", "Colegio Surcos", "Evaluaciones", "Asistencia", "Competencias", "Usuarios y representantes"],
+    ["Inicio", "Jugadores Juventud", "Colegio Surcos", "Usuarios y representantes"],
     key="menu_principal",
 )
 st.sidebar.divider()
@@ -457,7 +521,7 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
 
     # Categorías activas
     try:
-        categorias_resultado = supabase.table("categorias").select("id, nombre").eq("activa", True).order("nombre").execute()
+        categorias_resultado = supabase.table("categorias").select("id, nombre, edad_minima, edad_maxima").eq("activa", True).order("nombre").execute()
         categorias_lista = categorias_resultado.data or []
     except Exception:
         categorias_lista = []
@@ -469,58 +533,75 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
         elif not categorias_lista:
             st.warning("No hay categorías activas disponibles. Revisa la tabla categorias en Supabase.")
         else:
-            with st.form("formulario_deportista", clear_on_submit=True):
-                st.markdown(f"#### Registro para: {institucion_actual}")
-                st.caption("La institución se asigna automáticamente según el apartado en el que estás registrando al jugador.")
-                st.markdown("#### Datos personales")
-                c1, c2 = st.columns(2)
-                nombres = c1.text_input("Nombres *")
-                apellidos = c2.text_input("Apellidos *")
-                c3, c4 = st.columns(2)
-                fecha_nacimiento = c3.date_input("Fecha de nacimiento", value=date(2015, 1, 1), min_value=date(1990, 1, 1), max_value=date.today(), format="DD/MM/YYYY")
-                categoria_nombre = c4.selectbox("Categoría *", list(mapa_categorias.keys()), index=None, placeholder="Selecciona una categoría")
-                curso = st.text_input("Curso escolar")
-                st.markdown("#### Datos deportivos")
-                posiciones = ["Portero/a", "Defensa central", "Lateral derecho", "Lateral izquierdo", "Mediocentro defensivo", "Mediocentro", "Mediocentro ofensivo", "Extremo derecho", "Extremo izquierdo", "Delantero/a"]
-                c5, c6, c7 = st.columns(3)
-                posicion_principal = c5.selectbox("Posición principal", ["No definida"] + posiciones)
-                posicion_secundaria = c6.selectbox("Posición secundaria", ["No definida"] + posiciones)
-                pie_dominante = c7.selectbox("Pie dominante", ["No definido", "Derecho", "Izquierdo", "Ambidiestro"])
-                c8, c9, c10 = st.columns(3)
-                estatura = c8.number_input("Estatura (cm)", min_value=0, max_value=250, value=0)
-                peso = c9.number_input("Peso (kg)", min_value=0.0, max_value=200.0, value=0.0, step=0.5)
-                fotografia_url = c10.text_input("URL de fotografía (opcional)")
-                guardar = st.form_submit_button("Guardar deportista", use_container_width=True)
+            st.markdown(f"#### Registro para: {institucion_actual}")
+            st.caption("El código se asigna automáticamente al guardar. La categoría se actualiza automáticamente según el año de nacimiento y los rangos configurados en Supabase.")
+            prefijo_key = "surcos" if institucion_actual == INSTITUCION_SURCOS else "juventud"
+            st.markdown("#### Identificación")
+            c1, c2 = st.columns(2)
+            nombres = c1.text_input("Nombres *", key=f"nombres_{prefijo_key}")
+            apellidos = c2.text_input("Apellidos *", key=f"apellidos_{prefijo_key}")
+            cedula = st.text_input("Número de cédula", max_chars=10, help="Opcional. Se guarda como texto para conservar ceros iniciales.", key=f"cedula_{prefijo_key}")
+            c3, c4 = st.columns(2)
+            fecha_nacimiento = c3.date_input("Fecha de nacimiento *", value=date(2015, 1, 1), min_value=date(1990, 1, 1), max_value=date.today(), format="DD/MM/YYYY", key=f"nacimiento_{prefijo_key}")
+            curso = c4.text_input("Curso escolar", key=f"curso_{prefijo_key}")
+            fotografia_url = st.text_input("URL de fotografía tamaño carnet (opcional)", key=f"foto_{prefijo_key}")
+            categoria_auto = categoria_por_fecha(fecha_nacimiento, categorias_lista)
+            if categoria_auto:
+                st.success(f"Categoría asignada automáticamente: **{categoria_auto['nombre']}** · Año de nacimiento: {fecha_nacimiento.year}")
+            else:
+                st.warning("No se encontró una categoría para este año de nacimiento. Revisa los rangos edad_minima y edad_maxima de la tabla categorias.")
+            if fotografia_url.strip():
+                st.image(fotografia_url.strip(), width=120, caption="Vista previa · tamaño carnet")
+            st.markdown("#### Información deportiva")
+            posiciones = ["Portero/a", "Defensa central", "Lateral derecho", "Lateral izquierdo", "Mediocentro defensivo", "Mediocentro", "Mediocentro ofensivo", "Extremo derecho", "Extremo izquierdo", "Delantero/a"]
+            c5, c6, c7 = st.columns(3)
+            posicion_principal = c5.selectbox("Posición principal", ["No definida"] + posiciones, key=f"pos_principal_{prefijo_key}")
+            posicion_secundaria = c6.selectbox("Posición secundaria", ["No definida"] + posiciones, key=f"pos_secundaria_{prefijo_key}")
+            pie_dominante = c7.selectbox("Pie dominante", ["No definido", "Derecho", "Izquierdo", "Ambidiestro"], key=f"pie_{prefijo_key}")
+            c8, c9, c10 = st.columns(3)
+            estatura = c8.number_input("Estatura (cm)", min_value=0, max_value=250, value=0, key=f"estatura_{prefijo_key}")
+            peso = c9.number_input("Peso (kg)", min_value=0.0, max_value=200.0, value=0.0, step=0.5, key=f"peso_{prefijo_key}")
+            fecha_ingreso = c10.date_input("Fecha de ingreso", value=date.today(), format="DD/MM/YYYY", key=f"ingreso_{prefijo_key}")
+            nivel_competitivo = st.selectbox("Nivel competitivo", ["No definido", "Formativo", "Recreativo", "Intercolegial", "Provincial", "Nacional", "Selección"], key=f"nivel_{prefijo_key}")
+            guardar = st.button("Guardar deportista", use_container_width=True, key=f"guardar_jugador_{prefijo_key}")
             if guardar:
-                if not nombres.strip() or not apellidos.strip() or not categoria_nombre:
-                    st.error("Completa los nombres, apellidos y categoría.")
+                if not nombres.strip() or not apellidos.strip():
+                    st.error("Completa los nombres y apellidos.")
+                elif not categoria_auto:
+                    st.error("No se puede asignar la categoría automáticamente. Ajusta los rangos de edad en Supabase antes de registrar.")
+                elif cedula.strip() and (not cedula.strip().isdigit() or len(cedula.strip()) != 10):
+                    st.error("La cédula ecuatoriana debe contener 10 dígitos. Déjala vacía si todavía no la vas a registrar.")
                 else:
                     payload = {
                         "institucion": institucion_actual,
+                        "cedula": cedula.strip() or None,
                         "nombres": nombres.strip(), "apellidos": apellidos.strip(),
                         "fecha_nacimiento": fecha_nacimiento.isoformat(),
-                        "categoria_id": mapa_categorias[categoria_nombre],
+                        "categoria_id": categoria_auto["id"],
                         "curso": curso.strip() or None,
                         "posicion_principal": None if posicion_principal == "No definida" else posicion_principal,
                         "posicion_secundaria": None if posicion_secundaria == "No definida" else posicion_secundaria,
                         "pie_dominante": None if pie_dominante == "No definido" else pie_dominante,
                         "estatura": estatura if estatura > 0 else None,
                         "peso": peso if peso > 0 else None,
+                        "fecha_ingreso": fecha_ingreso.isoformat(),
+                        "nivel_competitivo": None if nivel_competitivo == "No definido" else nivel_competitivo,
                         "fotografia_url": fotografia_url.strip() or None,
                         "estado": "activo",
                     }
                     try:
                         supabase.table("jugadores").insert(payload).execute()
-                        st.success("Deportista registrado correctamente.")
+                        st.success("Deportista registrado correctamente. Su código se asignó automáticamente.")
                         st.rerun()
                     except Exception:
-                        st.error("No se pudo guardar el deportista. Verifica los permisos y los datos obligatorios de Supabase.")
+                        st.error("No se pudo guardar el deportista. Revisa si la cédula ya está registrada y confirma que ejecutaste la migración SQL.")
 
     with tab_consulta:
         if jugadores:
             busqueda = st.text_input("Buscar por nombre o apellido", key="buscar_jugador")
             filtrados = [j for j in jugadores if busqueda.lower() in nombre_jugador(j).lower()] if busqueda.strip() else jugadores
             filas = [{
+                "Código": j.get("codigo_jugador") or "Pendiente",
                 "Deportista": nombre_jugador(j),
                 "Categoría": categoria_jugador(j),
                 "Fecha de nacimiento": fecha_legible(j.get("fecha_nacimiento")),
@@ -541,7 +622,21 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
             elegido = st.selectbox("Selecciona un deportista", list(opciones_jugadores.keys()), key="expediente_jugador")
             jugador_id = opciones_jugadores[elegido]
             jugador = next(j for j in jugadores if j["id"] == jugador_id)
-            st.markdown(f'<div class="hero"><div class="eyebrow">Expediente individual</div><h2>{nombre_jugador(jugador)}</h2><p>{categoria_jugador(jugador)} · {jugador.get("posicion_principal") or "Posición por definir"}</p></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="hero"><div class="eyebrow">Expediente individual</div><h2>{nombre_jugador(jugador)}</h2><p>{jugador.get("codigo_jugador") or "Código pendiente"} · {categoria_jugador(jugador)} · {jugador.get("posicion_principal") or "Posición por definir"}</p></div>', unsafe_allow_html=True)
+            foto_col, datos_col = st.columns([1, 4])
+            with foto_col:
+                if jugador.get("fotografia_url"):
+                    try:
+                        st.image(jugador["fotografia_url"], width=125, caption="Fotografía tamaño carnet")
+                    except Exception:
+                        st.caption("Fotografía no disponible")
+                else:
+                    st.caption("Sin fotografía")
+            with datos_col:
+                st.write(f"**Código:** {jugador.get('codigo_jugador') or 'Pendiente'}")
+                st.write(f"**Cédula:** {jugador.get('cedula') or 'No registrada'}")
+                st.write(f"**Fecha de nacimiento:** {fecha_legible(jugador.get('fecha_nacimiento'))} · **Fecha de ingreso:** {fecha_legible(jugador.get('fecha_ingreso'))}")
+                st.write(f"**Curso:** {jugador.get('curso') or 'No registrado'} · **Nivel competitivo:** {jugador.get('nivel_competitivo') or 'No definido'}")
             a, b, c, d = st.columns(4)
             a.metric("Categoría", categoria_jugador(jugador))
             b.metric("Posición", jugador.get("posicion_principal") or "—")
@@ -589,7 +684,9 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                             m2.metric("Minutos", reg.get("minutos_jugados") or 0)
                             m3.metric("Goles", reg.get("goles") or 0)
                             m4.metric("Asistencias", reg.get("asistencias") or 0)
-                            st.write(f"**Competiciones:** {reg.get('competiciones') or '—'}")
+                            st.write(f"**Torneos/competiciones:** {reg.get('competiciones') or '—'}")
+                            st.write(f"**Premios:** {reg.get('premios') or '—'}")
+                            st.write(f"**Convocatorias/selecciones:** {reg.get('convocatorias') or '—'}")
                             st.write(f"**Logros:** {reg.get('logros') or '—'}")
                             if reg.get("observaciones"):
                                 st.write(f"**Observaciones:** {reg['observaciones']}")
@@ -610,8 +707,10 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                             minutos = t7.number_input("Minutos", min_value=0, value=0)
                             goles = t8.number_input("Goles", min_value=0, value=0)
                             asistencias = t9.number_input("Asistencias", min_value=0, value=0)
-                            competiciones = st.text_area("Competiciones")
-                            logros = st.text_area("Logros y reconocimientos")
+                            competiciones = st.text_area("Torneos y competiciones")
+                            premios = st.text_area("Premios")
+                            convocatorias = st.text_area("Convocatorias y selecciones")
+                            logros = st.text_area("Otros logros y reconocimientos")
                             obs_dep = st.text_area("Observaciones")
                             guardar_dep = st.form_submit_button("Guardar temporada", use_container_width=True)
                         if guardar_dep:
@@ -627,6 +726,8 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                                     "partidos_disputados": partidos, "minutos_jugados": minutos,
                                     "goles": goles, "asistencias": asistencias,
                                     "competiciones": competiciones.strip() or None,
+                                    "premios": premios.strip() or None,
+                                    "convocatorias": convocatorias.strip() or None,
                                     "logros": logros.strip() or None,
                                     "observaciones": obs_dep.strip() or None,
                                     "registrado_por": str(usuario.id),
@@ -649,6 +750,8 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                             "Promedio": r.get("promedio") if r.get("promedio") is not None else "",
                             "Materias destacadas": r.get("materias_destacadas") or "",
                             "Reconocimientos": r.get("reconocimientos") or "",
+                            "Inglés": r.get("ingles") or "",
+                            "Comportamiento": r.get("comportamiento") if r.get("comportamiento") is not None else "",
                             "Idiomas": r.get("idiomas") or "",
                         } for r in hist_acad], use_container_width=True, hide_index=True)
                     else:
@@ -661,7 +764,9 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                                 promedio = st.number_input("Promedio", min_value=0.0, max_value=10.0, value=0.0, step=0.1)
                                 materias = st.text_area("Materias destacadas")
                                 reconocimientos = st.text_area("Reconocimientos académicos")
-                                idiomas = st.text_input("Idiomas")
+                                idiomas = st.text_input("Otros idiomas")
+                                ingles = st.selectbox("Nivel de inglés", ["No evaluado", "Básico", "Intermedio", "Avanzado", "Bilingüe"])
+                                comportamiento = st.number_input("Comportamiento (escala 1 a 10)", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
                                 extracurriculares = st.text_area("Actividades extracurriculares")
                                 obs_acad = st.text_area("Observaciones")
                                 guardar_acad = st.form_submit_button("Guardar periodo", use_container_width=True)
@@ -676,6 +781,8 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                                         "materias_destacadas": materias.strip() or None,
                                         "reconocimientos": reconocimientos.strip() or None,
                                         "idiomas": idiomas.strip() or None,
+                                        "ingles": None if ingles == "No evaluado" else ingles,
+                                        "comportamiento": comportamiento if comportamiento > 0 else None,
                                         "actividades_extracurriculares": extracurriculares.strip() or None,
                                         "observaciones": obs_acad.strip() or None,
                                         "registrado_por": str(usuario.id),
@@ -688,52 +795,83 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                                         st.error("No se pudo guardar el periodo. Esta tabla está configurada para administración.")
 
             with tab_eval:
-                st.markdown("#### Seguimiento integral (escala 1 a 10)")
+                st.markdown("#### Evolución del deportista")
+                st.caption("Técnica y actitudinal se califican de 1 a 10. En pruebas físicas registra los segundos obtenidos; un tiempo menor es mejor. Course Navette se registra como nivel/etapa alcanzada; un valor mayor es mejor.")
                 if evals:
-                    for ev in evals:
+                    grafico_evolucion(evals, [("pase_efectividad", "Pase"), ("conduccion", "Conducción"), ("tiros_efectividad", "Tiros al arco")], "Evolución técnica · escala 1 a 10")
+                    grafico_evolucion(evals, [("disciplina", "Disciplina"), ("compromiso", "Compromiso"), ("responsabilidad", "Responsabilidad"), ("trabajo_equipo", "Trabajo en equipo"), ("capacidad_esfuerzo", "Capacidad de esfuerzo")], "Evolución actitudinal · escala 1 a 10")
+                    grafico_evolucion(evals, [("velocidad_10m", "10 m (s)"), ("velocidad_20m", "20 m (s)"), ("illinois", "Illinois (s)")], "Pruebas de velocidad y agilidad", "En estas pruebas, la mejora normalmente se observa cuando disminuye el tiempo.")
+                    grafico_evolucion(evals, [("course_navette", "Nivel/etapa")], "Course Navette")
+                    st.markdown("#### Evaluaciones registradas")
+                    for ev in sorted(evals, key=lambda x: str(x.get("fecha_evaluacion") or ""), reverse=True):
                         with st.expander(f"Evaluación · {fecha_legible(ev.get('fecha_evaluacion'))}"):
-                            metricas = [
-                                ("Técnica", "tecnica"), ("Táctica", "tactica"),
-                                ("Toma de decisiones", "toma_decisiones"), ("Condición física", "condicion_fisica"),
-                                ("Actitud y mentalidad", "actitud_mentalidad"), ("Capacidad de aprendizaje", "capacidad_aprendizaje"),
-                                ("Adaptabilidad", "adaptabilidad"), ("Rendimiento competitivo", "rendimiento_competitivo"),
-                            ]
-                            cols = st.columns(4)
-                            for idx, (etiqueta, campo) in enumerate(metricas):
-                                valor = ev.get(campo)
-                                cols[idx % 4].metric(etiqueta, valor if valor is not None else "—")
+                            c1, c2, c3 = st.columns(3)
+                            c1.metric("Efectividad de pase", ev.get("pase_efectividad") if ev.get("pase_efectividad") is not None else "—")
+                            c2.metric("Conducción", ev.get("conduccion") if ev.get("conduccion") is not None else "—")
+                            c3.metric("Efectividad de tiros", ev.get("tiros_efectividad") if ev.get("tiros_efectividad") is not None else "—")
+                            st.write(f"**Físicas:** 10 m: {ev.get('velocidad_10m') if ev.get('velocidad_10m') is not None else '—'} s · 20 m: {ev.get('velocidad_20m') if ev.get('velocidad_20m') is not None else '—'} s · Illinois: {ev.get('illinois') if ev.get('illinois') is not None else '—'} s · Course Navette: {ev.get('course_navette') if ev.get('course_navette') is not None else '—'}")
+                            st.write(f"**Actitudinal:** Disciplina {ev.get('disciplina') if ev.get('disciplina') is not None else '—'} · Compromiso {ev.get('compromiso') if ev.get('compromiso') is not None else '—'} · Responsabilidad {ev.get('responsabilidad') if ev.get('responsabilidad') is not None else '—'} · Trabajo en equipo {ev.get('trabajo_equipo') if ev.get('trabajo_equipo') is not None else '—'} · Esfuerzo {ev.get('capacidad_esfuerzo') if ev.get('capacidad_esfuerzo') is not None else '—'}")
                             st.write(f"**Fortalezas:** {ev.get('fortalezas') or '—'}")
                             st.write(f"**Aspectos por mejorar:** {ev.get('aspectos_mejora') or '—'}")
                             st.write(f"**Recomendaciones:** {ev.get('recomendaciones') or '—'}")
                 else:
-                    st.info("No hay evaluaciones integrales registradas.")
+                    st.info("No hay evaluaciones registradas. Cuando guardes la primera, aparecerá aquí; con dos o más fechas podrás observar la evolución.")
                 if puede_editar(rol):
-                    with st.expander("➕ Registrar evaluación integral"):
-                        with st.form(f"form_eval_{jugador_id}"):
+                    with st.expander("➕ Registrar nueva evaluación"):
+                        with st.form(f"form_eval_detallada_{jugador_id}"):
                             fecha_eval = st.date_input("Fecha de evaluación", value=date.today(), format="DD/MM/YYYY")
-                            etiquetas_metricas = [
-                                ("Técnica", "tecnica"), ("Táctica", "tactica"),
-                                ("Toma de decisiones", "toma_decisiones"), ("Condición física", "condicion_fisica"),
-                                ("Actitud y mentalidad", "actitud_mentalidad"), ("Capacidad de aprendizaje", "capacidad_aprendizaje"),
-                                ("Adaptabilidad", "adaptabilidad"), ("Rendimiento competitivo", "rendimiento_competitivo"),
-                            ]
-                            valores_metricas = {}
-                            cols = st.columns(4)
-                            for idx, (etiqueta, campo) in enumerate(etiquetas_metricas):
-                                valores_metricas[campo] = cols[idx % 4].selectbox(etiqueta, ["Sin evaluar"] + list(range(1, 11)), key=f"{campo}_{jugador_id}")
+                            st.markdown("##### Técnica · escala 1 a 10")
+                            c1, c2, c3 = st.columns(3)
+                            pase = c1.number_input("Efectividad de pase", min_value=0.0, max_value=10.0, value=0.0, step=0.5, help="0 = sin registrar; de 1 a 10 = puntuación")
+                            conduccion = c2.number_input("Conducción", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
+                            tiros = c3.number_input("Efectividad de tiros al arco", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
+                            st.markdown("##### Física · registra tiempos reales en segundos")
+                            f1, f2, f3, f4 = st.columns(4)
+                            vel10 = f1.number_input("Velocidad 10 m (s)", min_value=0.0, max_value=120.0, value=0.0, step=0.01, format="%.3f")
+                            vel20 = f2.number_input("Velocidad 20 m (s)", min_value=0.0, max_value=120.0, value=0.0, step=0.01, format="%.3f")
+                            illinois = f3.number_input("Illinois (s)", min_value=0.0, max_value=300.0, value=0.0, step=0.01, format="%.3f")
+                            navette = f4.number_input("Course Navette (nivel/etapa)", min_value=0.0, max_value=30.0, value=0.0, step=0.5)
+                            st.markdown("##### Actitudinal · escala 1 a 10")
+                            att = st.columns(5)
+                            disciplina = att[0].number_input("Disciplina", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
+                            compromiso = att[1].number_input("Compromiso", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
+                            responsabilidad = att[2].number_input("Responsabilidad", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
+                            trabajo_equipo = att[3].number_input("Trabajo en equipo", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
+                            esfuerzo = att[4].number_input("Capacidad de esfuerzo", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
                             fortalezas = st.text_area("Fortalezas")
                             aspectos_mejora = st.text_area("Aspectos por mejorar")
-                            recomendaciones = st.text_area("Recomendaciones de trabajo")
+                            recomendaciones = st.text_area("Recomendaciones")
                             guardar_eval = st.form_submit_button("Guardar evaluación", use_container_width=True)
                         if guardar_eval:
-                            payload = {"jugador_id": jugador_id, "fecha_evaluacion": fecha_eval.isoformat(), "evaluador_id": str(usuario.id), "fortalezas": fortalezas.strip() or None, "aspectos_mejora": aspectos_mejora.strip() or None, "recomendaciones": recomendaciones.strip() or None}
-                            payload.update({campo: (valor if isinstance(valor, int) else None) for campo, valor in valores_metricas.items()})
-                            try:
-                                supabase.table("evaluaciones_integrales").insert(payload).execute()
-                                st.success("Evaluación guardada correctamente.")
-                                st.rerun()
-                            except Exception:
-                                st.error("No se pudo guardar la evaluación. Verifica que el usuario tenga permisos de entrenador o administrador.")
+                            payload = {
+                                "jugador_id": jugador_id,
+                                "fecha_evaluacion": fecha_eval.isoformat(),
+                                "evaluador_id": str(usuario.id),
+                                "pase_efectividad": pase if pase > 0 else None,
+                                "conduccion": conduccion if conduccion > 0 else None,
+                                "tiros_efectividad": tiros if tiros > 0 else None,
+                                "velocidad_10m": vel10 if vel10 > 0 else None,
+                                "velocidad_20m": vel20 if vel20 > 0 else None,
+                                "illinois": illinois if illinois > 0 else None,
+                                "course_navette": navette if navette > 0 else None,
+                                "disciplina": disciplina if disciplina > 0 else None,
+                                "compromiso": compromiso if compromiso > 0 else None,
+                                "responsabilidad": responsabilidad if responsabilidad > 0 else None,
+                                "trabajo_equipo": trabajo_equipo if trabajo_equipo > 0 else None,
+                                "capacidad_esfuerzo": esfuerzo if esfuerzo > 0 else None,
+                                "fortalezas": fortalezas.strip() or None,
+                                "aspectos_mejora": aspectos_mejora.strip() or None,
+                                "recomendaciones": recomendaciones.strip() or None,
+                            }
+                            if not any(payload[k] is not None for k in ["pase_efectividad", "conduccion", "tiros_efectividad", "velocidad_10m", "velocidad_20m", "illinois", "course_navette", "disciplina", "compromiso", "responsabilidad", "trabajo_equipo", "capacidad_esfuerzo"]):
+                                st.error("Registra al menos un resultado antes de guardar.")
+                            else:
+                                try:
+                                    supabase.table("evaluaciones_integrales").insert(payload).execute()
+                                    st.success("Evaluación guardada. Se incorporará al gráfico de evolución.")
+                                    st.rerun()
+                                except Exception:
+                                    st.error("No se pudo guardar la evaluación. Ejecuta primero migracion_ficha_evaluaciones.sql y revisa los permisos de Supabase.")
 
             with tab_evidencias:
                 st.markdown("#### Material de seguimiento")
@@ -790,44 +928,6 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                     st.download_button("⬇️ Descargar expediente PDF", data=pdf_bytes, file_name=nombre_archivo, mime="application/pdf", use_container_width=True)
                 except Exception:
                     st.error("No se pudo generar el PDF. Revisa que reportlab esté instalado en requirements.txt.")
-
-# ============================================================
-# EVALUACIONES: ACCESO DIRECTO
-# ============================================================
-elif seccion == "Evaluaciones":
-    encabezado_seccion("📊 Evaluaciones integrales", "Consulta evaluaciones y entra al expediente del deportista para registrar una nueva.")
-    st.write("Las evaluaciones se guardan como registros históricos para observar la evolución, no para reemplazar la evaluación anterior.")
-    if jugadores:
-        lista_eval = []
-        for j in jugadores:
-            try:
-                regs = supabase.table("evaluaciones_integrales").select("fecha_evaluacion, tecnica, tactica, toma_decisiones, condicion_fisica, actitud_mentalidad, capacidad_aprendizaje, adaptabilidad, rendimiento_competitivo").eq("jugador_id", j["id"]).order("fecha_evaluacion", desc=True).limit(1).execute().data or []
-                if regs:
-                    r = regs[0]
-                    lista_eval.append({"Deportista": nombre_jugador(j), "Categoría": categoria_jugador(j), "Fecha": fecha_legible(r.get("fecha_evaluacion")), "Técnica": r.get("tecnica"), "Táctica": r.get("tactica"), "Decisiones": r.get("toma_decisiones"), "Físico": r.get("condicion_fisica"), "Mentalidad": r.get("actitud_mentalidad")})
-            except Exception:
-                pass
-        if lista_eval:
-            st.dataframe(lista_eval, use_container_width=True, hide_index=True)
-        else:
-            st.info("Aún no existen evaluaciones integrales visibles.")
-    else:
-        st.info("No hay deportistas visibles para tu cuenta.")
-    st.caption("Para registrar una evaluación, abre Deportistas → Expediente individual → Evaluaciones.")
-
-# ============================================================
-# ASISTENCIA
-# ============================================================
-elif seccion == "Asistencia":
-    encabezado_seccion("📅 Control de asistencia", "Registro de participación en entrenamientos.")
-    st.info("El módulo de asistencia aún no se ha ampliado en esta versión. Se mantiene pendiente para evitar modificar la estructura actual sin revisar las columnas de la tabla asistencia.")
-
-# ============================================================
-# COMPETENCIAS
-# ============================================================
-elif seccion == "Competencias":
-    encabezado_seccion("🏆 Competencias", "Partidos, torneos, convocatorias y resultados.")
-    st.info("El módulo de competencias se ampliará en una siguiente etapa, después de revisar las columnas actuales de competencias y estadisticas_competencia.")
 
 # ============================================================
 # USUARIOS Y REPRESENTANTES
