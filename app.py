@@ -9,15 +9,13 @@ st.set_page_config(
 )
 
 
-@st.cache_resource
+
 def conectar_supabase():
     return create_client(
         st.secrets["SUPABASE_URL"],
         st.secrets["SUPABASE_KEY"]
     )
 
-
-supabase = conectar_supabase()
 
 if "sesion" not in st.session_state:
     st.session_state.sesion = None
