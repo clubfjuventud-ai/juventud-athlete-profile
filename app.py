@@ -10,27 +10,50 @@ st.set_page_config(
 
 @st.cache_resource
 def conectar_supabase():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
+    return create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_KEY"]
+    )
+
+supabase = conectar_supabase()
+
+if "sesion" not in st.session_state:
+    st.session_state.sesion = None
 
 st.title("⚽ Juventud Athlete Profile")
 st.subheader("Sistema de gestión y desarrollo del estudiante-atleta")
 
-st.write(
-    "Plataforma deportiva de Club Juventud y Unidad Educativa Bilingüe Surcos."
-)
+if st.session_state.sesion is None:
+    st.write("Ingresa con tu cuenta para continuar.")
 
-st.divider()
+    with st.form("formulario_login"):
+        correo = st.text_input("Correo electrónico")
+        contrasena = st.text_input("Contraseña", type="password")
+        ingresar = st.form_submit_button("Iniciar sesión")
 
-try:
-    supabase = conectar_supabase()
-    st.success("Conexión con Supabase establecida correctamente.")
-except Exception as e:
-    st.error("No se pudo conectar con Supabase.")
-    st.caption(
-        "Revisa los Secrets de Streamlit y la configuración de la aplicación."
-    )
-    st.stop()
+    if ingresar:
+        try:
+            respuesta = supabase.auth.sign_in_with_password({
+                "email": correo.strip(),
+                "password": contrasena
+            })
 
-st.info("Sistema en desarrollo — Versión 1.0")
+            st.session_state.sesion = respuesta.session
+            st.rerun()
+
+        except Exception:
+            st.error("No se pudo iniciar sesión. Verifica tus credenciales.")
+
+else:
+    usuario = st.session_state.sesion.user
+
+    st.success("Sesión iniciada correctamente.")
+    st.write(f"Correo: {usuario.email}")
+
+    if st.button("Cerrar sesión"):
+        try:
+            supabase.auth.sign_out()
+        finally:
+            st.session_state.sesion = None
+            st.rerun()
+
