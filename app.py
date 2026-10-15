@@ -90,11 +90,9 @@ else:
                 "Contacta al administrador."
             )
 
-    except Exception:
-        st.error(
-            "No se pudo consultar tu perfil. "
-            "Verifica la tabla perfiles y sus permisos."
-        )
+    except Exception as e:
+    st.error("No se pudo consultar tu perfil.")
+    st.code(str(e))
 
     st.divider()
 
