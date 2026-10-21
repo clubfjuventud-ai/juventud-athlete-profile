@@ -8,6 +8,18 @@ import pandas as pd
 import streamlit as st
 from supabase import create_client
 
+from modules.configuracion import (
+    BASE_DIR, ASSETS_DIR, LOGO_JUVENTUD, LOGO_SURCOS,
+    INSTITUCION_JUVENTUD, INSTITUCION_SURCOS
+)
+from modules.autenticacion import conectar_supabase, cerrar_sesion
+from modules.utilidades import (
+    encabezado_seccion, obtener_jugadores, ruta_logo, mostrar_marca,
+    nombre_jugador, categoria_jugador, obtener_edad, categoria_por_fecha,
+    grafico_evolucion, fecha_legible, puede_editar
+)
+from modules.informes_pdf import generar_pdf
+
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
@@ -26,12 +38,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-BASE_DIR = Path(__file__).resolve().parent
-ASSETS_DIR = BASE_DIR / "assets"
-LOGO_JUVENTUD = ASSETS_DIR / "logo_juventud.png"
-LOGO_SURCOS = ASSETS_DIR / "logo_surcos.png"
-INSTITUCION_JUVENTUD = "Club Juventud"
-INSTITUCION_SURCOS = "Colegio Surcos"
 
 NEGRO = "#101114"
 NEGRO_CARD = "#191B20"
@@ -68,311 +74,31 @@ st.markdown(
 )
 
 
-def encabezado_seccion(titulo, descripcion=None):
-    st.markdown('<div class="brand-line"></div>', unsafe_allow_html=True)
-    st.header(titulo)
-    if descripcion:
-        st.caption(descripcion)
 
 
-def conectar_supabase():
-    """Crea un cliente por ejecución para evitar compartir sesiones entre usuarios."""
-    cliente = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-    sesion = st.session_state.get("sesion")
-    if sesion is not None:
-        cliente.postgrest.auth(sesion.access_token)
-    return cliente
 
 
-def cerrar_sesion():
-    try:
-        if st.session_state.get("sesion") is not None:
-            cliente = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-            cliente.auth.set_session(
-                st.session_state.sesion.access_token,
-                st.session_state.sesion.refresh_token,
-            )
-            cliente.auth.sign_out()
-    except Exception:
-        pass
-    st.session_state.sesion = None
-    st.rerun()
 
 
-def obtener_jugadores(supabase):
-    respuesta = (
-        supabase.table("jugadores")
-        .select(
-            "id, codigo_jugador, cedula, nombres, apellidos, fecha_nacimiento, fecha_ingreso, curso, "
-            "posicion_principal, posicion_secundaria, pie_dominante, estatura, peso, fotografia_url, "
-            "nivel_competitivo, estado, categoria_id, institucion, categorias(nombre, edad_minima, edad_maxima)"
-        )
-        .order("apellidos")
-        .execute()
-    )
-    return respuesta.data or []
 
 
-def ruta_logo(institucion):
-    """Devuelve el archivo de logo correspondiente si está instalado en assets/."""
-    ruta = LOGO_SURCOS if institucion == INSTITUCION_SURCOS else LOGO_JUVENTUD
-    return ruta if ruta.exists() else None
 
 
-def mostrar_marca(institucion=INSTITUCION_JUVENTUD, ancho=120):
-    ruta = ruta_logo(institucion)
-    if ruta:
-        st.image(str(ruta), width=ancho)
-    else:
-        st.markdown(f"**{institucion.upper()}**")
 
 
-def nombre_jugador(jugador):
-    return f"{jugador.get('apellidos', '')}, {jugador.get('nombres', '')}".strip(", ")
 
 
-def categoria_jugador(jugador):
-    categoria = jugador.get("categorias")
-    if isinstance(categoria, list):
-        categoria = categoria[0] if categoria else None
-    return (categoria or {}).get("nombre", "Sin categoría")
-
-def obtener_edad(fecha_nacimiento, fecha_referencia=None):
-    # Categoría por año de nacimiento: criterio de temporada deportiva.
-    fecha_referencia = fecha_referencia or date.today()
-    return fecha_referencia.year - fecha_nacimiento.year
 
 
-def categoria_por_fecha(fecha_nacimiento, categorias):
-    """Busca por rangos de edad y, si no están configurados, usa nombres como Sub-8/Sub-10."""
-    edad = obtener_edad(fecha_nacimiento)
-    for categoria in categorias:
-        minimo = categoria.get("edad_minima")
-        maximo = categoria.get("edad_maxima")
-        if minimo is not None and maximo is not None and int(minimo) <= edad <= int(maximo):
-            return categoria
-    # Alternativa para categorías típicas Sub-8, Sub-10, Sub-12, Sub-14 y Sub-16.
-    categorias_con_limite = []
-    for categoria in categorias:
-        match = re.search(r"sub\s*[- ]?\s*(\d+)", str(categoria.get("nombre", "")), re.IGNORECASE)
-        if match:
-            categorias_con_limite.append((int(match.group(1)), categoria))
-    for limite, categoria in sorted(categorias_con_limite, key=lambda item: item[0]):
-        if edad <= limite:
-            return categoria
-    return None
 
 
-def grafico_evolucion(registros, campos, titulo, ylabel=None):
-    """Dibuja evolución cronológica solo cuando existen datos para esas métricas."""
-    puntos = []
-    for registro in sorted(registros, key=lambda x: str(x.get("fecha_evaluacion") or "")):
-        fila = {"Fecha": str(registro.get("fecha_evaluacion") or "")}
-        for campo, etiqueta in campos:
-            valor = registro.get(campo)
-            if valor is not None:
-                try:
-                    fila[etiqueta] = float(valor)
-                except (TypeError, ValueError):
-                    pass
-        if len(fila) > 1:
-            puntos.append(fila)
-    if puntos:
-        df = pd.DataFrame(puntos).set_index("Fecha")
-        st.markdown(f"**{titulo}**")
-        st.line_chart(df, height=260)
-        if ylabel:
-            st.caption(ylabel)
-    else:
-        st.caption(f"El gráfico de {titulo.lower()} aparecerá cuando haya resultados registrados en más de una fecha.")
 
 
-def fecha_legible(valor):
-    if not valor:
-        return "No registrada"
-    try:
-        return date.fromisoformat(str(valor)[:10]).strftime("%d/%m/%Y")
-    except Exception:
-        return str(valor)
 
 
-def puede_editar(rol):
-    return rol in ("administrador", "entrenador")
 
 
-def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir_academico, incluir_evaluaciones):
-    """Genera un PDF interno. El usuario debe verificar autorizaciones antes de compartirlo."""
-    buffer = io.BytesIO()
-    documento = SimpleDocTemplate(
-        buffer, pagesize=A4,
-        rightMargin=1.65 * cm, leftMargin=1.65 * cm,
-        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
-        title=f"Expediente deportivo - {nombre_jugador(jugador)}",
-        author="Club Juventud",
-    )
-    estilos = getSampleStyleSheet()
-    estilos.add(ParagraphStyle(
-        name="Marca", parent=estilos["Normal"], fontName="Helvetica-Bold",
-        fontSize=9, leading=12, textColor=colors.HexColor("#B18C20"), alignment=TA_CENTER,
-    ))
-    estilos.add(ParagraphStyle(
-        name="TituloClub", parent=estilos["Title"], fontName="Helvetica-Bold",
-        fontSize=21, leading=25, textColor=colors.HexColor("#151515"), alignment=TA_CENTER,
-        spaceAfter=4,
-    ))
-    estilos.add(ParagraphStyle(
-        name="SubtituloClub", parent=estilos["Normal"], fontName="Helvetica",
-        fontSize=9, leading=13, textColor=colors.HexColor("#555555"), alignment=TA_CENTER,
-        spaceAfter=12,
-    ))
-    estilos.add(ParagraphStyle(
-        name="SeccionClub", parent=estilos["Heading2"], fontName="Helvetica-Bold",
-        fontSize=12, leading=15, textColor=colors.HexColor("#8A6A0A"),
-        spaceBefore=12, spaceAfter=6,
-    ))
-    estilos.add(ParagraphStyle(
-        name="TextoPequeno", parent=estilos["BodyText"], fontName="Helvetica",
-        fontSize=8.5, leading=11, textColor=colors.HexColor("#333333"),
-    ))
-    institucion = jugador.get("institucion") or INSTITUCION_JUVENTUD
-    nombre_marca = "COLEGIO SURCOS" if institucion == INSTITUCION_SURCOS else "CLUB JUVENTUD"
-    logo = ruta_logo(institucion)
-    elementos = []
-    if logo:
-        imagen_logo = PDFImage(str(logo), width=3.0 * cm, height=3.0 * cm, kind="bound", hAlign="CENTER")
-        elementos.append(imagen_logo)
-        elementos.append(Spacer(1, 4))
-    elementos.extend([
-        Paragraph(nombre_marca, estilos["Marca"]),
-        Paragraph("EXPEDIENTE DEL ESTUDIANTE-ATLETA", estilos["TituloClub"]),
-        Paragraph(f"{institucion.upper()} · DOCUMENTO DE USO INTERNO", estilos["SubtituloClub"]),
-    ])
 
-    def tabla_datos(filas, anchos=None):
-        datos = [[Paragraph(f"<b>{a}</b>", estilos["TextoPequeno"]), Paragraph(str(b or "No registrado"), estilos["TextoPequeno"])] for a, b in filas]
-        tabla = Table(datos, colWidths=anchos or [4.3 * cm, 12.1 * cm], hAlign="LEFT")
-        tabla.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F2EBD5")),
-            ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#222222")),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D8D8D8")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 7),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]))
-        return tabla
-
-    elementos.append(Paragraph("1. DATOS DEL DEPORTISTA", estilos["SeccionClub"]))
-    elementos.append(tabla_datos([
-        ("Código del jugador", jugador.get("codigo_jugador")),
-        ("Cédula", jugador.get("cedula")),
-        ("Nombre completo", nombre_jugador(jugador)),
-        ("Fecha de nacimiento", fecha_legible(jugador.get("fecha_nacimiento"))),
-        ("Fecha de ingreso", fecha_legible(jugador.get("fecha_ingreso"))),
-        ("Categoría", categoria_jugador(jugador)),
-        ("Curso escolar", jugador.get("curso")),
-        ("Posición principal", jugador.get("posicion_principal")),
-        ("Posición secundaria", jugador.get("posicion_secundaria")),
-        ("Pie dominante", jugador.get("pie_dominante")),
-        ("Estatura (cm)", jugador.get("estatura")),
-        ("Peso (kg)", jugador.get("peso")),
-        ("Nivel competitivo", jugador.get("nivel_competitivo")),
-        ("Estado", jugador.get("estado")),
-    ]))
-
-    elementos.append(Paragraph("2. HISTORIAL DEPORTIVO", estilos["SeccionClub"]))
-    if deportivo:
-        for registro in deportivo:
-            elementos.append(KeepTogether([
-                Paragraph(f"<b>Temporada:</b> {registro.get('temporada') or 'No registrada'} · <b>Equipo:</b> {registro.get('club_equipo') or 'No registrado'}", estilos["TextoPequeno"]),
-                Paragraph(
-                    f"Categoría: {registro.get('categoria') or '—'} · Posición: {registro.get('posicion') or '—'} · "
-                    f"Camiseta: {registro.get('numero_camiseta') or '—'}", estilos["TextoPequeno"]
-                ),
-                Paragraph(
-                    f"Partidos: {registro.get('partidos_disputados') or 0} · Minutos: {registro.get('minutos_jugados') or 0} · "
-                    f"Goles: {registro.get('goles') or 0} · Asistencias: {registro.get('asistencias') or 0}", estilos["TextoPequeno"]
-                ),
-                Paragraph(f"Competiciones: {registro.get('competiciones') or '—'} · Logros: {registro.get('logros') or '—'}", estilos["TextoPequeno"]),
-                Spacer(1, 6),
-            ]))
-    else:
-        elementos.append(Paragraph("Todavía no hay temporadas deportivas registradas.", estilos["TextoPequeno"]))
-
-    if incluir_academico:
-        elementos.append(Paragraph("3. HISTORIAL ACADÉMICO · INFORMACIÓN CONFIDENCIAL", estilos["SeccionClub"]))
-        if academico:
-            for registro in academico:
-                elementos.append(KeepTogether([
-                    Paragraph(f"<b>Periodo:</b> {registro.get('periodo_academico') or '—'} · <b>Curso:</b> {registro.get('curso') or '—'} · <b>Promedio:</b> {registro.get('promedio') or '—'}", estilos["TextoPequeno"]),
-                    Paragraph(f"Materias destacadas: {registro.get('materias_destacadas') or '—'}", estilos["TextoPequeno"]),
-                    Paragraph(f"Reconocimientos: {registro.get('reconocimientos') or '—'} · Inglés: {registro.get('ingles') or '—'} · Comportamiento: {registro.get('comportamiento') if registro.get('comportamiento') is not None else '—'} · Otros idiomas: {registro.get('idiomas') or '—'}", estilos["TextoPequeno"]),
-                    Spacer(1, 6),
-                ]))
-        else:
-            elementos.append(Paragraph("No hay registros académicos disponibles o visibles para esta cuenta.", estilos["TextoPequeno"]))
-
-    if incluir_evaluaciones:
-        elementos.append(Paragraph("4. EVALUACIONES INTEGRALES · CONFIDENCIAL", estilos["SeccionClub"]))
-        if evaluaciones:
-            for ev in evaluaciones:
-                elementos.append(Paragraph(f"<b>Fecha:</b> {fecha_legible(ev.get('fecha_evaluacion'))}", estilos["TextoPequeno"]))
-                metricas = [
-                    ("Efectividad de pase (1-10)", ev.get("pase_efectividad")),
-                    ("Conducción (1-10)", ev.get("conduccion")),
-                    ("Efectividad de tiros al arco (1-10)", ev.get("tiros_efectividad")),
-                    ("Velocidad 10 m (segundos)", ev.get("velocidad_10m")),
-                    ("Velocidad 20 m (segundos)", ev.get("velocidad_20m")),
-                    ("Illinois (segundos)", ev.get("illinois")),
-                    ("Course Navette (nivel/etapa)", ev.get("course_navette")),
-                    ("Disciplina (1-10)", ev.get("disciplina")),
-                    ("Compromiso (1-10)", ev.get("compromiso")),
-                    ("Responsabilidad (1-10)", ev.get("responsabilidad")),
-                    ("Trabajo en equipo (1-10)", ev.get("trabajo_equipo")),
-                    ("Capacidad de esfuerzo (1-10)", ev.get("capacidad_esfuerzo")),
-                ]
-                elementos.append(tabla_datos([(a, b if b is not None else "—") for a, b in metricas]))
-                elementos.append(Paragraph(f"Fortalezas: {ev.get('fortalezas') or '—'}", estilos["TextoPequeno"]))
-                elementos.append(Paragraph(f"Aspectos por mejorar: {ev.get('aspectos_mejora') or '—'}", estilos["TextoPequeno"]))
-                elementos.append(Paragraph(f"Recomendaciones: {ev.get('recomendaciones') or '—'}", estilos["TextoPequeno"]))
-                elementos.append(Spacer(1, 8))
-        else:
-            elementos.append(Paragraph("No hay evaluaciones visibles para esta cuenta.", estilos["TextoPequeno"]))
-
-    elementos.append(Paragraph("5. EVIDENCIAS REGISTRADAS", estilos["SeccionClub"]))
-    if evidencias:
-        for ev in evidencias:
-            linea = f"{ev.get('titulo') or 'Evidencia'} · {ev.get('tipo') or 'otro'} · {fecha_legible(ev.get('fecha_evidencia'))}"
-            elementos.append(Paragraph(linea, estilos["TextoPequeno"]))
-            if ev.get("url"):
-                elementos.append(Paragraph(f"Enlace: {ev.get('url')}", estilos["TextoPequeno"]))
-            if ev.get("descripcion"):
-                elementos.append(Paragraph(f"Descripción: {ev.get('descripcion')}", estilos["TextoPequeno"]))
-            elementos.append(Spacer(1, 4))
-    else:
-        elementos.append(Paragraph("Todavía no hay evidencias registradas.", estilos["TextoPequeno"]))
-
-    elementos.extend([
-        Spacer(1, 14),
-        Paragraph("Juventud con Propósito y Futuro", estilos["Marca"]),
-        Paragraph("Documento interno. Antes de compartirlo, verifica la autorización del representante legal y elimina la información que no sea necesaria para el destinatario.", estilos["TextoPequeno"]),
-    ])
-
-    def pie_pagina(canvas, doc):
-        canvas.saveState()
-        canvas.setStrokeColor(colors.HexColor("#B18C20"))
-        canvas.setLineWidth(2)
-        canvas.line(1.65 * cm, 1.15 * cm, A4[0] - 1.65 * cm, 1.15 * cm)
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(colors.HexColor("#666666"))
-        canvas.drawString(1.65 * cm, 0.75 * cm, "CLUB JUVENTUD · EXPEDIENTE CONFIDENCIAL")
-        canvas.drawRightString(A4[0] - 1.65 * cm, 0.75 * cm, f"Página {doc.page}")
-        canvas.restoreState()
-
-    documento.build(elementos, onFirstPage=pie_pagina, onLaterPages=pie_pagina)
-    buffer.seek(0)
-    return buffer.getvalue()
 
 
 # ============================================================
