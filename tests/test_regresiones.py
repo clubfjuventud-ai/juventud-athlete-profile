@@ -24,6 +24,7 @@ class Consulta:
         self.cliente, self.tabla = cliente, tabla
         self.inicio, self.fin = 0, None
         self.filtros = {}
+        self.singular = False
 
     def select(self, *args):
         return self
@@ -36,6 +37,7 @@ class Consulta:
         return self
 
     def maybe_single(self):
+        self.singular = True
         return self
 
     def range(self, inicio, fin):
@@ -46,7 +48,7 @@ class Consulta:
         self.cliente.consultas.append((self.tabla, self.inicio))
         if self.tabla in self.cliente.errores:
             raise ConnectionError('fallo sintético')
-        if self.tabla == 'perfiles':
+        if self.tabla == 'perfiles' and self.singular:
             return SimpleNamespace(data={'activo': True, 'rol': self.cliente.rol, 'nombre_completo': 'Prueba'})
         filas = self.cliente.datos.get(self.tabla, [])
         filas = [r for r in filas if all(r.get(k) == v for k, v in self.filtros.items())]

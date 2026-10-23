@@ -13,6 +13,7 @@ from modules.utilidades import (
     fecha_legible, puede_editar, opciones_expediente, obtener_paginas,
 )
 from modules.interfaz import aplicar_estilo, mostrar_cabecera_jugador, mostrar_pulso, preparar_pdf, seleccionar_representado
+from modules.entrenamientos import Contexto, mostrar_espacio
 from modules.analisis_rendimiento import mostrar_analisis_rendimiento
 from modules.evaluaciones_visuales import mostrar_panel_evaluaciones, validar_resultados
 
@@ -144,7 +145,7 @@ if rol_padre:
     seccion = "Colegio Surcos" if institucion_representado == INSTITUCION_SURCOS else "Jugadores Juventud"
     st.sidebar.caption("Mi representado · Seguimiento individual")
 else:
-    opciones_menu = ["Inicio", "Jugadores Juventud", "Colegio Surcos"]
+    opciones_menu = ["Inicio", "Jugadores Juventud", "Colegio Surcos", "Entrenamientos"]
     if rol_admin:
         opciones_menu.append("Usuarios y representantes")
     if st.session_state.get("menu_principal") not in opciones_menu:
@@ -359,10 +360,13 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
             etiquetas = ["Evolución", "Trayectoria"]
             if not rol_padre:
                 etiquetas.append("Académico")
-            etiquetas.extend(["Evidencias", "Datos personales", "Informe PDF"])
+            etiquetas.extend(["Entrenamientos", "Evidencias", "Datos personales", "Informe PDF"])
             tabs_ficha = dict(zip(etiquetas, st.tabs(etiquetas)))
             tab_eval, tab_deportivo = tabs_ficha["Evolución"], tabs_ficha["Trayectoria"]
             tab_resumen, tab_evidencias, tab_pdf = tabs_ficha["Datos personales"], tabs_ficha["Evidencias"], tabs_ficha["Informe PDF"]
+
+            with tabs_ficha["Entrenamientos"]:
+                mostrar_espacio(supabase, Contexto(rol, str(usuario.id), modo_previa), [jugador] if rol_padre else jugadores, jugador)
 
             with tab_resumen:
                 st.markdown("#### Datos del deportista")
@@ -626,6 +630,12 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                         incluir_academico_pdf, incluir_eval_pdf,
                         alcance=f"{usuario.id}_{rol}_{modo_previa}",
                     )
+
+# ============================================================
+# ENTRENAMIENTOS
+# ============================================================
+elif seccion == "Entrenamientos":
+    mostrar_espacio(supabase, Contexto(rol, str(usuario.id), modo_previa), jugadores)
 
 # ============================================================
 # USUARIOS Y REPRESENTANTES

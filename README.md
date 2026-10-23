@@ -1,6 +1,6 @@
 # Club Juventud Athlete Profile — estructura modular (etapa 1)
 
-Esta versión separa funciones existentes de `app.py` en módulos, procurando conservar el comportamiento actual. **No incluye migraciones SQL ni cambios a Supabase.**
+La aplicación organiza los expedientes, evaluaciones y seguimiento por institución. Incluye un nuevo módulo de entrenamientos con una migración SQL propuesta para revisión; **no se aplica automáticamente ni se ha ejecutado en producción**.
 
 ## Estructura
 
@@ -9,6 +9,7 @@ Esta versión separa funciones existentes de `app.py` en módulos, procurando co
 - `modules/autenticacion.py`: conexión Supabase y cierre de sesión.
 - `modules/utilidades.py`: consultas y funciones auxiliares de la interfaz.
 - `modules/informes_pdf.py`: generación del expediente PDF.
+- `modules/entrenamientos.py`: sesiones, archivos privados y asistencia por categoría.
 - `modules/interfaz.py`: estilos, cabecera compacta, resumen de fechas y PDF bajo demanda.
 - `modules/evaluaciones_visuales.py`: panel de atributos, comparación por fecha y cuadros vectoriales de evaluación.
 - `assets/`: coloca aquí los logos originales `logo_juventud.png` y `logo_surcos.png`.
@@ -25,7 +26,7 @@ No publiques `secrets.toml`, claves privadas ni contraseñas en GitHub.
 
 ## Antes de desplegar
 
-Prueba esta versión en una rama separada o en una copia del repositorio. Esta etapa es una reorganización del código; todavía no implementa la gestión de usuarios, los permisos nuevos, las pruebas EIR/cualidades volitivas ni la carga de entrenamientos. Esas funciones requieren una siguiente etapa y revisión del esquema/políticas RLS de Supabase.
+Prueba esta versión en una rama separada o en una copia del repositorio. La gestión de cuentas y vínculos existente no se altera. El nuevo espacio de entrenamientos requiere revisar y autorizar su configuración en Supabase, siguiendo [la guía de activación](docs/activar_entrenamientos.md).
 
 ## Evaluaciones visuales
 
@@ -73,3 +74,12 @@ Una cuenta con rol `padre` entra directamente al expediente si el servidor devue
 La interfaz utiliza las filas que devuelve el cliente autenticado existente; las políticas RLS siguen siendo responsables de restringirlas a los deportistas vinculados a esa cuenta. Este cambio no inspecciona ni modifica las políticas desplegadas. Las pruebas simulan respuestas filtradas del servidor; no sustituyen una verificación con una cuenta real en producción.
 
 En la vista previa de Representante, una cuenta administradora puede elegir **Ejemplo de expediente · Solo administrador → Deportista para la vista previa**. Ese control es exclusivo de la vista previa; no aparece para cuentas reales de representantes y no crea ni cambia vínculos.
+
+
+## Sesiones, fotos y asistencia
+
+**Entrenamientos** aparece en el menú de entrenadores, autoridades y administración, y como pestaña del expediente para representantes. La autoridad consulta y descarga contenido de Surcos; administración puede gestionar espacios y asignaciones. El representante observa las sesiones y fotografías de la categoría de su representado y solo su asistencia, sin botones de descarga en ese espacio.
+
+El entrenador puede publicar objetivos, actividades, un PDF y fotografías y registrar asistencia de sus categorías asignadas. Los archivos son privados y no se publican hasta confirmar la carga. Las descargas para personal autorizado incluyen archivos individuales, asistencia CSV y un ZIP de la sesión.
+
+**Pendiente de activación en producción:** revisión del esquema/vínculos y autorización de [la migración propuesta](migrations/001_espacios_entrenamiento.sql). Véase [accesos, puesta en marcha y pruebas](docs/activar_entrenamientos.md). Ningún script de migración se ejecuta desde Streamlit.
