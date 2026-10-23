@@ -10,6 +10,33 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from modules.configuracion import INSTITUCION_JUVENTUD, INSTITUCION_SURCOS
 from modules.utilidades import nombre_jugador, categoria_jugador, fecha_legible, ruta_logo
 
+# Tonos institucionales sobre fondo blanco para conservar legibilidad al imprimir.
+PALETAS_PDF = {
+    INSTITUCION_JUVENTUD: {
+        "principal": "#17170F", "acento": "#D8A830", "marca": "#8A6A0A",
+        "seccion": "#8A6A0A", "fondo": "#F8F1D9", "borde": "#DECEA0",
+        "lema": "Juventud con Propósito y Futuro",
+    },
+    INSTITUCION_SURCOS: {
+        "principal": "#0868A0", "acento": "#70A808", "marca": "#4C7300",
+        "seccion": "#0868A0", "fondo": "#EFF6DF", "borde": "#BCD6E4",
+        "lema": "Unidad Educativa Bilingüe",
+    },
+}
+
+
+def paleta_pdf(institucion):
+    nombre = str(institucion or INSTITUCION_JUVENTUD).strip().casefold()
+    for institucion_conocida, paleta in PALETAS_PDF.items():
+        if institucion_conocida.casefold() == nombre:
+            return paleta
+    return {
+        "principal": "#222222", "acento": "#666666", "marca": "#333333",
+        "seccion": "#333333", "fondo": "#F2F2F2", "borde": "#D8D8D8",
+        "lema": str(institucion),
+    }
+
+
 def _escapar_datos(valor):
     """Copia los datos y neutraliza marcado antes de pasarlos a Paragraph."""
     if isinstance(valor, str):
@@ -23,22 +50,24 @@ def _escapar_datos(valor):
 
 def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir_academico, incluir_evaluaciones):
     """Genera un PDF interno. El usuario debe verificar autorizaciones antes de compartirlo."""
+    institucion = str(jugador.get("institucion") or INSTITUCION_JUVENTUD).strip()
+    paleta = paleta_pdf(institucion)
     buffer = io.BytesIO()
     documento = SimpleDocTemplate(
         buffer, pagesize=A4,
         rightMargin=1.65 * cm, leftMargin=1.65 * cm,
         topMargin=1.5 * cm, bottomMargin=1.5 * cm,
         title=f"Expediente deportivo - {nombre_jugador(jugador)}",
-        author="Club Juventud",
+        author=institucion,
     )
     estilos = getSampleStyleSheet()
     estilos.add(ParagraphStyle(
         name="Marca", parent=estilos["Normal"], fontName="Helvetica-Bold",
-        fontSize=9, leading=12, textColor=colors.HexColor("#B18C20"), alignment=TA_CENTER,
+        fontSize=9, leading=12, textColor=colors.HexColor(paleta["marca"]), alignment=TA_CENTER,
     ))
     estilos.add(ParagraphStyle(
         name="TituloClub", parent=estilos["Title"], fontName="Helvetica-Bold",
-        fontSize=21, leading=25, textColor=colors.HexColor("#151515"), alignment=TA_CENTER,
+        fontSize=21, leading=25, textColor=colors.HexColor(paleta["principal"]), alignment=TA_CENTER,
         spaceAfter=4,
     ))
     estilos.add(ParagraphStyle(
@@ -48,14 +77,13 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
     ))
     estilos.add(ParagraphStyle(
         name="SeccionClub", parent=estilos["Heading2"], fontName="Helvetica-Bold",
-        fontSize=12, leading=15, textColor=colors.HexColor("#8A6A0A"),
+        fontSize=12, leading=15, textColor=colors.HexColor(paleta["seccion"]),
         spaceBefore=12, spaceAfter=6,
     ))
     estilos.add(ParagraphStyle(
         name="TextoPequeno", parent=estilos["BodyText"], fontName="Helvetica",
         fontSize=8.5, leading=11, textColor=colors.HexColor("#333333"),
     ))
-    institucion = jugador.get("institucion") or INSTITUCION_JUVENTUD
     nombre_marca = escape(institucion.upper())
     logo = ruta_logo(institucion)
     jugador, academico, deportivo, evaluaciones, evidencias = _escapar_datos(
@@ -84,9 +112,9 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
         datos = [[Paragraph(f"<b>{a}</b>", estilos["TextoPequeno"]), Paragraph(str(b or "No registrado"), estilos["TextoPequeno"])] for a, b in filas]
         tabla = Table(datos, colWidths=anchos or [4.3 * cm, 12.1 * cm], hAlign="LEFT")
         tabla.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F2EBD5")),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor(paleta["fondo"])),
             ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#222222")),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D8D8D8")),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor(paleta["borde"])),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 7),
             ("RIGHTPADDING", (0, 0), (-1, -1), 7),
@@ -187,18 +215,22 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
 
     elementos.extend([
         Spacer(1, 14),
-        Paragraph("Juventud con Propósito y Futuro", estilos["Marca"]),
+        Paragraph(escape(paleta["lema"]), estilos["Marca"]),
         Paragraph("Documento interno. Antes de compartirlo, verifica la autorización del representante legal y elimina la información que no sea necesaria para el destinatario.", estilos["TextoPequeno"]),
     ])
 
     def pie_pagina(canvas, doc):
         canvas.saveState()
-        canvas.setStrokeColor(colors.HexColor("#B18C20"))
         canvas.setLineWidth(2)
-        canvas.line(1.65 * cm, 1.15 * cm, A4[0] - 1.65 * cm, 1.15 * cm)
+        inicio, fin = 1.65 * cm, A4[0] - 1.65 * cm
+        division = inicio + (fin - inicio) * 0.7
+        canvas.setStrokeColor(colors.HexColor(paleta["principal"]))
+        canvas.line(inicio, 1.15 * cm, division, 1.15 * cm)
+        canvas.setStrokeColor(colors.HexColor(paleta["acento"]))
+        canvas.line(division, 1.15 * cm, fin, 1.15 * cm)
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(colors.HexColor("#666666"))
-        canvas.drawString(1.65 * cm, 0.75 * cm, "CLUB JUVENTUD · EXPEDIENTE CONFIDENCIAL")
+        canvas.drawString(1.65 * cm, 0.75 * cm, f"{institucion.upper()} · EXPEDIENTE CONFIDENCIAL")
         canvas.drawRightString(A4[0] - 1.65 * cm, 0.75 * cm, f"Página {doc.page}")
         canvas.restoreState()
 

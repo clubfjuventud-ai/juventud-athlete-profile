@@ -1,4 +1,7 @@
 import re
+import base64
+import io
+from PIL import Image
 from collections import Counter
 from datetime import date
 import pandas as pd
@@ -64,8 +67,18 @@ def mostrar_marca(institucion=INSTITUCION_JUVENTUD, ancho=120):
     ruta = ruta_logo(nombre)
     if ruta:
         try:
-            # Solo se fija el ancho: Streamlit calcula la altura original.
-            st.image(str(ruta), width=ancho)
+            # Una URI de datos evita que Streamlit reduzca el archivo a un píxel
+            # por píxel CSS. El navegador recibe resolución suficiente para pantallas 3x.
+            with Image.open(ruta) as original:
+                imagen = original.convert("RGBA" if "transparency" in original.info or "A" in original.getbands() else "RGB")
+                ancho_fisico = min(imagen.width, ancho * 3)
+                if imagen.width > ancho_fisico:
+                    alto_fisico = max(1, round(imagen.height * ancho_fisico / imagen.width))
+                    imagen = imagen.resize((ancho_fisico, alto_fisico), Image.Resampling.LANCZOS)
+                buffer = io.BytesIO()
+                imagen.save(buffer, format="PNG")
+            imagen_web = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+            st.image(imagen_web, width=ancho)
             return
         except (OSError, ValueError):
             pass

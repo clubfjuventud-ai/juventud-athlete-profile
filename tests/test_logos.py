@@ -1,4 +1,6 @@
 import tempfile
+import base64
+import io
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -43,7 +45,10 @@ class LogosInstitucionales(unittest.TestCase):
     def test_streamlit_fija_solo_ancho_y_selecciona_logo_correcto(self):
         with patch.object(utilidades, 'st') as interfaz:
             utilidades.mostrar_marca(INSTITUCION_SURCOS, ancho=180)
-            interfaz.image.assert_called_once_with(str(self.surcos), width=180)
+            interfaz.image.assert_called_once()
+            llamada = interfaz.image.call_args
+            self.assertEqual(llamada.kwargs, {"width": 180})
+            self.assertTrue(llamada.args[0].startswith("data:image/png;base64,"))
             interfaz.text.assert_not_called()
 
     def test_nombre_visible_si_falta_o_no_se_puede_leer_imagen(self):
@@ -152,8 +157,25 @@ class LogosOriginales(unittest.TestCase):
                 if cantidad:
                     institucion = INSTITUCION_SURCOS if seccion == 'Colegio Surcos' else INSTITUCION_JUVENTUD
                     self.assertTrue(all(llamada.args[0] == institucion for llamada in marcas.call_args_list))
+                    for imagen_web in app.get('image'):
+                        uri = imagen_web.proto.imgs[0].url
+                        self.assertTrue(uri.startswith('data:image/png;base64,'))
+                        with Image.open(io.BytesIO(base64.b64decode(uri.split(',', 1)[1]))) as enviada:
+                            self.assertGreaterEqual(enviada.width, 420)
+
                 self.assertEqual(len(app.sidebar.get('image')), 0)
                 self.assertEqual(len(app.error), 0)
+
+    def test_logo_web_retiene_tres_pixeles_por_pixel_css(self):
+        for institucion in (INSTITUCION_JUVENTUD, INSTITUCION_SURCOS):
+            with self.subTest(institucion=institucion), patch.object(utilidades, 'st') as interfaz:
+                utilidades.mostrar_marca(institucion, ancho=150)
+                uri = interfaz.image.call_args.args[0]
+                with Image.open(io.BytesIO(base64.b64decode(uri.split(',', 1)[1]))) as enviada:
+                    self.assertEqual(enviada.width, 450)
+                    with Image.open(utilidades.ruta_logo(institucion)) as original:
+                        self.assertLessEqual(abs(enviada.height - 450 * original.height / original.width), 0.5)
+                self.assertEqual(interfaz.image.call_args.kwargs['width'], 150)
 
     def test_pdf_incrusta_original_correcto_sin_deformarlo(self):
         constructor = informes_pdf.PDFImage
@@ -174,6 +196,42 @@ class LogosOriginales(unittest.TestCase):
                 self.assertAlmostEqual(imagenes[0].drawWidth / imagenes[0].drawHeight, proporcion)
                 self.assertTrue(pdf.startswith(b'%PDF'))
                 self.assertIn(b'/Subtype /Image', pdf)
+
+
+class ColoresPdf(unittest.TestCase):
+    def test_paleta_encabezados_tablas_y_pie_por_institucion(self):
+        from reportlab.lib.colors import HexColor
+        from reportlab.platypus import Paragraph, Table
+        from unittest.mock import Mock
+        for institucion, principal, acento, fondo in [
+            (INSTITUCION_JUVENTUD, '#17170F', '#D8A830', '#F8F1D9'),
+            (INSTITUCION_SURCOS, '#0868A0', '#70A808', '#EFF6DF'),
+        ]:
+            with self.subTest(institucion=institucion):
+                documentos = []
+                def capturar(doc, elementos, **callbacks):
+                    documentos.append((doc, elementos))
+                    canvas = Mock()
+                    callbacks['onFirstPage'](canvas, SimpleNamespace(page=1))
+                    trazos = [llamada.args[0] for llamada in canvas.setStrokeColor.call_args_list]
+                    self.assertEqual(trazos, [HexColor(principal), HexColor(acento)])
+                    self.assertTrue(any(institucion.upper() in llamada.args[-1]
+                                        for llamada in canvas.drawString.call_args_list))
+                with patch.object(informes_pdf.SimpleDocTemplate, 'build', autospec=True, side_effect=capturar), \
+                        patch.object(informes_pdf, 'ruta_logo', return_value=None):
+                    informes_pdf.generar_pdf({'institucion': institucion}, [], [], [], [], False, False)
+                doc, elementos = documentos[0]
+                self.assertEqual(doc.author, institucion)
+                titulo = next(e for e in elementos if isinstance(e, Paragraph) and e.style.name == 'TituloClub')
+                self.assertEqual(titulo.style.textColor, HexColor(principal))
+                tablas = [e for e in elementos if isinstance(e, Table)]
+                self.assertTrue(tablas)
+                self.assertTrue(all(t._bkgrndcmds[0][-1] == HexColor(fondo) for t in tablas))
+                textos = [e.getPlainText() for e in elementos if isinstance(e, Paragraph)]
+                if institucion == INSTITUCION_SURCOS:
+                    self.assertIn('Unidad Educativa Bilingüe', textos)
+                    self.assertNotIn('Juventud con Propósito y Futuro', textos)
+
 
 
 if __name__ == '__main__':
