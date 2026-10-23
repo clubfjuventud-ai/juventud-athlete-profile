@@ -19,6 +19,7 @@ from modules.utilidades import (
     nombre_jugador, categoria_jugador, obtener_edad, categoria_por_fecha,
     grafico_evolucion, fecha_legible, puede_editar, opciones_expediente, obtener_paginas
 )
+from modules.analisis_rendimiento import mostrar_analisis_rendimiento
 from modules.informes_pdf import generar_pdf
 from modules.evaluaciones_visuales import mostrar_panel_evaluaciones, validar_resultados
 
@@ -406,6 +407,10 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                 st.write(f"**Peso:** {str(jugador.get('peso')) + ' kg' if jugador.get('peso') else 'No registrado'}")
                 st.write(f"**Estado:** {jugador.get('estado') or 'No registrado'}")
                 st.caption("El historial conserva registros por periodo; evita sobrescribir evaluaciones o temporadas anteriores.")
+                mostrar_analisis_rendimiento(
+                    jugador, evals, hist_dep, hist_acad, evidencias,
+                    usuario_id=str(usuario.id), incluir_academico=not rol_padre,
+                )
 
             with tab_deportivo:
                 st.markdown("#### Temporadas y trayectoria")

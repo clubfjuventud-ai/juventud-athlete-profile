@@ -42,3 +42,13 @@ Se deriva al consultar o exportar y no se escribe una columna nueva. Se utiliza 
 `VO2max = 31.025 + 3.238 × v − 3.248 × A + 0.1536 × A × v`, en ml/kg/min.
 
 Se calcula la edad cumplida en la fecha de la evaluación, no la edad actual. Para adultos se fija A=18, siguiendo el artículo. Solo se aplica entre 8 y 50 años, con fecha de nacimiento y nivel válidos y bajo el protocolo de 20 m indicado; en otros casos se muestra sin estimación. No es una medición directa.
+
+## Análisis de rendimiento inteligente
+
+En **Expediente individual → Resumen**, el botón genera un informe local con los registros visibles para la cuenta. Lo pueden consultar padres, entrenadores, administración y autoridades con acceso al deportista. No llama a una API de IA, no es IA generativa, no realiza búsquedas externas y no tiene costes de consulta. No requiere claves adicionales ni modifica Supabase o RLS.
+
+Compara la primera y última fecha válidas, explica cada prueba y señala el último intervalo cuando hay más registros. Distingue cero aciertos de datos ausentes, identifica resultados contradictorios de una misma fecha y no presenta una prueba antigua como si estuviera actualizada. Las comparaciones incompletas quedan fuera del resumen global. La explicación del VO₂máx distingue el efecto de la edad del cambio del nivel de Navette.
+
+El informe incluye preguntas frecuentes sobre unidades, evolución, registros faltantes y contexto deportivo. Los datos académicos solo se incorporan cuando la vista actual los permite; los representantes conservan la restricción existente. No asigna causas, diagnósticos, baremos por edad ni una nota global sin evidencia.
+
+El resultado puede descargarse como texto, se conserva en la sesión de la cuenta y se invalida si cambian los datos. No se comparte una caché de informes entre cuentas ni deportistas.
