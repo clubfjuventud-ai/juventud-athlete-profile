@@ -28,4 +28,17 @@ Prueba esta versión en una rama separada o en una copia del repositorio. Esta e
 
 ## Evaluaciones visuales
 
-La ficha muestra un radar de las ocho puntuaciones técnicas y actitudinales sobre 10. Elige una evaluación y otra fecha de referencia para comparar el perfil y las variaciones. Las pruebas físicas se muestran en segundos o nivel/etapa; no se convierten en notas ni se mezclan en una calificación global. Un dato ausente no equivale a cero. Los PDF incluyen cuadros vectoriales con comparación respecto a la evaluación anterior.
+- Pases y tiros al arco: aciertos enteros de 0 a 5. Un campo vacío es una prueba no realizada; cero significa que no hubo aciertos.
+- Conducción, Illinois y velocidades de 10 y 20 m: tiempos positivos en segundos.
+- Course Navette de 20 m: último nivel completo alcanzado, entero de 1 a 21. Velocidad del nivel = 8 + 0,5 × nivel (km/h).
+- La evaluación actitudinal se retiró de formularios, panel, gráficos y PDF. No se borran ni modifican columnas de la base de datos.
+
+El radar conserva el estilo de perfil del deportista: en pases y tiros, 5 aciertos equivalen al 100%; para tiempos y Navette, el 100% corresponde al mejor registro del historial del propio deportista. Los resultados reales y sus unidades permanecen en las tarjetas. Ambos perfiles comparados usan las mismas referencias. No representa un baremo por edad ni una calificación global.
+
+### VO₂máx estimado
+
+Se deriva al consultar o exportar y no se escribe una columna nueva. Se utiliza la ecuación de [Léger et al. (1988)](https://pubmed.ncbi.nlm.nih.gov/3184250/):
+
+`VO2max = 31.025 + 3.238 × v − 3.248 × A + 0.1536 × A × v`, en ml/kg/min.
+
+Se calcula la edad cumplida en la fecha de la evaluación, no la edad actual. Para adultos se fija A=18, siguiendo el artículo. Solo se aplica entre 8 y 50 años, con fecha de nacimiento y nivel válidos y bajo el protocolo de 20 m indicado; en otros casos se muestra sin estimación. No es una medición directa.

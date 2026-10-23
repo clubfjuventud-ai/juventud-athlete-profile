@@ -20,7 +20,7 @@ from modules.utilidades import (
     grafico_evolucion, fecha_legible, puede_editar, opciones_expediente, obtener_paginas
 )
 from modules.informes_pdf import generar_pdf
-from modules.evaluaciones_visuales import mostrar_panel_evaluaciones
+from modules.evaluaciones_visuales import mostrar_panel_evaluaciones, validar_resultados
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -534,7 +534,7 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
 
             with tab_eval:
                 st.markdown("#### Evolución del deportista")
-                st.caption("Técnica y actitudinal se califican de 1 a 10. En pruebas físicas registra los segundos obtenidos; un tiempo menor es mejor. Course Navette se registra como nivel/etapa alcanzada; un valor mayor es mejor.")
+                st.caption("Pases y tiros: aciertos de 5 intentos. Conducción, Illinois y velocidades de 10 y 20 m: segundos. Course Navette: nivel alcanzado y VO₂máx estimado.")
                 if evals is None:
                     st.error("No se pudieron cargar las evaluaciones. Reintenta recargando la página.")
                 elif evals:
@@ -545,24 +545,20 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                     with st.expander("➕ Registrar nueva evaluación"):
                         with st.form(f"form_eval_detallada_{jugador_id}"):
                             fecha_eval = st.date_input("Fecha de evaluación", value=date.today(), format="DD/MM/YYYY")
-                            st.markdown("##### Técnica · escala 1 a 10")
-                            c1, c2, c3 = st.columns(3)
-                            pase = c1.number_input("Efectividad de pase", min_value=0.0, max_value=10.0, value=0.0, step=0.5, help="0 = sin registrar; de 1 a 10 = puntuación")
-                            conduccion = c2.number_input("Conducción", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
-                            tiros = c3.number_input("Efectividad de tiros al arco", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
-                            st.markdown("##### Física · registra tiempos reales en segundos")
+                            st.markdown("##### Efectividad · aciertos de 5 intentos")
+                            c1, c2 = st.columns(2)
+                            pase = c1.number_input("Efectividad de pases (aciertos / 5)", min_value=0, max_value=5, value=None, step=1, help="Deja vacío si no se realizó. Cero significa 0 aciertos de 5 intentos.")
+                            tiros = c2.number_input("Efectividad de tiros al arco (aciertos / 5)", min_value=0, max_value=5, value=None, step=1)
+                            st.markdown("##### Pruebas cronometradas · segundos")
                             f1, f2, f3, f4 = st.columns(4)
-                            vel10 = f1.number_input("Velocidad 10 m (s)", min_value=0.0, max_value=120.0, value=0.0, step=0.01, format="%.3f")
-                            vel20 = f2.number_input("Velocidad 20 m (s)", min_value=0.0, max_value=120.0, value=0.0, step=0.01, format="%.3f")
-                            illinois = f3.number_input("Illinois (s)", min_value=0.0, max_value=300.0, value=0.0, step=0.01, format="%.3f")
-                            navette = f4.number_input("Course Navette (nivel/etapa)", min_value=0.0, max_value=30.0, value=0.0, step=0.5)
-                            st.markdown("##### Actitudinal · escala 1 a 10")
-                            att = st.columns(5)
-                            disciplina = att[0].number_input("Disciplina", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
-                            compromiso = att[1].number_input("Compromiso", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
-                            responsabilidad = att[2].number_input("Responsabilidad", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
-                            trabajo_equipo = att[3].number_input("Trabajo en equipo", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
-                            esfuerzo = att[4].number_input("Capacidad de esfuerzo", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
+                            conduccion = f1.number_input("Conducción (s)", min_value=0.001, max_value=600.0, value=None, step=0.01, format="%.3f")
+                            illinois = f2.number_input("Illinois (s)", min_value=0.001, max_value=300.0, value=None, step=0.01, format="%.3f")
+                            vel10 = f3.number_input("Velocidad 10 m (s)", min_value=0.001, max_value=120.0, value=None, step=0.01, format="%.3f")
+                            vel20 = f4.number_input("Velocidad 20 m (s)", min_value=0.001, max_value=120.0, value=None, step=0.01, format="%.3f")
+                            st.markdown("##### Course Navette · protocolo de 20 m")
+                            st.caption("Inicio a 8,5 km/h; incremento de 0,5 km/h por nivel. Registra el último nivel completado, sin mezclarlo con el número de recorridos.")
+                            navette = st.number_input("Nivel alcanzado en Course Navette", min_value=1, max_value=21, value=None, step=1)
+                            st.caption("El VO₂máx estimado se calcula al consultar el resultado con la edad del deportista en la fecha de evaluación. No es un campo que debas introducir manualmente.")
                             fortalezas = st.text_area("Fortalezas")
                             aspectos_mejora = st.text_area("Aspectos por mejorar")
                             recomendaciones = st.text_area("Recomendaciones")
@@ -572,24 +568,20 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                                 "jugador_id": jugador_id,
                                 "fecha_evaluacion": fecha_eval.isoformat(),
                                 "evaluador_id": str(usuario.id),
-                                "pase_efectividad": pase if pase > 0 else None,
-                                "conduccion": conduccion if conduccion > 0 else None,
-                                "tiros_efectividad": tiros if tiros > 0 else None,
-                                "velocidad_10m": vel10 if vel10 > 0 else None,
-                                "velocidad_20m": vel20 if vel20 > 0 else None,
-                                "illinois": illinois if illinois > 0 else None,
-                                "course_navette": navette if navette > 0 else None,
-                                "disciplina": disciplina if disciplina > 0 else None,
-                                "compromiso": compromiso if compromiso > 0 else None,
-                                "responsabilidad": responsabilidad if responsabilidad > 0 else None,
-                                "trabajo_equipo": trabajo_equipo if trabajo_equipo > 0 else None,
-                                "capacidad_esfuerzo": esfuerzo if esfuerzo > 0 else None,
+                                "pase_efectividad": pase,
+                                "conduccion": conduccion,
+                                "tiros_efectividad": tiros,
+                                "velocidad_10m": vel10,
+                                "velocidad_20m": vel20,
+                                "illinois": illinois,
+                                "course_navette": navette,
                                 "fortalezas": fortalezas.strip() or None,
                                 "aspectos_mejora": aspectos_mejora.strip() or None,
                                 "recomendaciones": recomendaciones.strip() or None,
                             }
-                            if not any(payload[k] is not None for k in ["pase_efectividad", "conduccion", "tiros_efectividad", "velocidad_10m", "velocidad_20m", "illinois", "course_navette", "disciplina", "compromiso", "responsabilidad", "trabajo_equipo", "capacidad_esfuerzo"]):
-                                st.error("Registra al menos un resultado antes de guardar.")
+                            error_validacion = validar_resultados(payload)
+                            if error_validacion:
+                                st.error(error_validacion)
                             else:
                                 try:
                                     supabase.table("evaluaciones_integrales").insert(payload).execute()

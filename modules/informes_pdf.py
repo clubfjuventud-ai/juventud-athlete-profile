@@ -7,7 +7,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, Image as PDFImage
 
-from modules.evaluaciones_visuales import ordenar_evaluaciones, cuadro_evaluacion_pdf
+from modules.evaluaciones_visuales import ordenar_evaluaciones, cuadro_evaluacion_pdf, referencias_personales
 from modules.configuracion import INSTITUCION_JUVENTUD, INSTITUCION_SURCOS
 from modules.utilidades import nombre_jugador, categoria_jugador, fecha_legible, ruta_logo
 
@@ -178,11 +178,12 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
         elementos.append(Paragraph("4. EVALUACIONES INTEGRALES · CONFIDENCIAL", estilos["SeccionClub"]))
         if evaluaciones:
             ordenadas = ordenar_evaluaciones(evaluaciones)
+            referencias = referencias_personales(ordenadas)
             for indice, ev in enumerate(ordenadas):
                 anterior = ordenadas[indice + 1] if indice + 1 < len(ordenadas) else None
                 elementos.append(KeepTogether([
                     Paragraph(f"<b>Fecha:</b> {fecha_legible(ev.get('fecha_evaluacion'))}", estilos["TextoPequeno"]),
-                    cuadro_evaluacion_pdf(ev, anterior, paleta),
+                    cuadro_evaluacion_pdf(ev, anterior, paleta, jugador=jugador, referencias=referencias),
                     Spacer(1, 6),
                 ]))
                 elementos.append(Paragraph(f"Fortalezas: {ev.get('fortalezas') or '—'}", estilos["TextoPequeno"]))
