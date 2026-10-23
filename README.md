@@ -9,6 +9,7 @@ Esta versión separa funciones existentes de `app.py` en módulos, procurando co
 - `modules/autenticacion.py`: conexión Supabase y cierre de sesión.
 - `modules/utilidades.py`: consultas y funciones auxiliares de la interfaz.
 - `modules/informes_pdf.py`: generación del expediente PDF.
+- `modules/interfaz.py`: estilos, cabecera compacta, resumen de fechas y PDF bajo demanda.
 - `modules/evaluaciones_visuales.py`: panel de atributos, comparación por fecha y cuadros vectoriales de evaluación.
 - `assets/`: coloca aquí los logos originales `logo_juventud.png` y `logo_surcos.png`.
 
@@ -45,10 +46,21 @@ Se calcula la edad cumplida en la fecha de la evaluación, no la edad actual. Pa
 
 ## Análisis de rendimiento inteligente
 
-En **Expediente individual → Resumen**, el botón genera un informe local con los registros visibles para la cuenta. Lo pueden consultar padres, entrenadores, administración y autoridades con acceso al deportista. No llama a una API de IA, no es IA generativa, no realiza búsquedas externas y no tiene costes de consulta. No requiere claves adicionales ni modifica Supabase o RLS.
+En **Expediente individual → Evolución**, el botón genera un informe local con los registros visibles para la cuenta. Lo pueden consultar padres, entrenadores, administración y autoridades con acceso al deportista. No llama a una API de IA, no es IA generativa, no realiza búsquedas externas y no tiene costes de consulta. No requiere claves adicionales ni modifica Supabase o RLS.
 
 Compara la primera y última fecha válidas, explica cada prueba y señala el último intervalo cuando hay más registros. Distingue cero aciertos de datos ausentes, identifica resultados contradictorios de una misma fecha y no presenta una prueba antigua como si estuviera actualizada. Las comparaciones incompletas quedan fuera del resumen global. La explicación del VO₂máx distingue el efecto de la edad del cambio del nivel de Navette.
 
 El informe incluye preguntas frecuentes sobre unidades, evolución, registros faltantes y contexto deportivo. Los datos académicos solo se incorporan cuando la vista actual los permite; los representantes conservan la restricción existente. No asigna causas, diagnósticos, baremos por edad ni una nota global sin evidencia.
 
 El resultado puede descargarse como texto, se conserva en la sesión de la cuenta y se invalida si cambian los datos. No se comparte una caché de informes entre cuentas ni deportistas.
+
+
+## Navegación y vista previa de roles
+
+La institución abre en **Expediente individual → Evolución**. El directorio admite búsqueda por código, nombre o apellido. Los datos personales, trayectoria, académico, evidencias e informe PDF tienen espacios propios; los formularios aparecen según el rol. En móvil, el menú lateral empieza cerrado y las pestañas permiten desplazamiento horizontal.
+
+Surcos usa su nombre, logo y acentos verdes y azules. Juventud conserva su identidad negra y dorada dentro de su sección. Las páginas generales no muestran logos.
+
+Solo una cuenta administradora dispone de **menú lateral → Vista previa de roles → Ver la interfaz como**. Permite elegir Entrenador, Autoridad o Representante y regresar a **Mi cuenta**. La vista previa conserva la sesión real y sus datos visibles; no suplanta a otra persona, no reproduce sus filtros RLS ni sus vínculos. Las opciones de guardar están deshabilitadas y los manejadores de escritura rechazan la vista previa. Las consultas siguen usando el cliente autenticado existente. Representante oculta la pestaña y consultas académicas, manteniendo las restricciones de exportación existentes.
+
+En **Informe PDF**, pulsa **Preparar expediente PDF** antes de descargarlo. El resultado solo se guarda en la sesión y deja de ofrecerse cuando cambian el deportista, los datos incluidos, las opciones, la cuenta o la vista de rol.

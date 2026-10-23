@@ -244,7 +244,7 @@ def mostrar_analisis_rendimiento(jugador,evaluaciones,historial_deportivo,academ
     clave=f"analisis_rendimiento_{usuario_id}_{jugador['id']}"
     datos=[jugador,evaluaciones,historial_deportivo,academico if incluir_academico else None,evidencias,incluir_academico]
     huella=hashlib.sha256(json.dumps(datos,sort_keys=True,default=str,ensure_ascii=False).encode()).hexdigest()
-    if st.button('Análisis de rendimiento inteligente',key=clave+'_boton',disabled=evaluaciones is None,use_container_width=True):
+    if st.button('Análisis de rendimiento inteligente',key=clave+'_boton',disabled=evaluaciones is None,use_container_width=True,type='primary'):
         informe=generar_analisis(jugador,evaluaciones,historial_deportivo,academico,evidencias,incluir_academico)
         st.session_state[clave]={'huella':huella,'informe':informe}
     if evaluaciones is None:

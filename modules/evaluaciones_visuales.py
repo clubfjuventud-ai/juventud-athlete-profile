@@ -179,7 +179,7 @@ def mostrar_panel_evaluaciones(registros,jugador):
     clave=str(jugador['id'])
     def etiqueta(i):
         return 'Sin comparación' if i is None else f'{fecha_evaluacion(ordenadas[i])} · Registro {len(ordenadas)-i}'
-    st.markdown('#### Perfil del deportista')
+    st.markdown('#### Comparar evaluaciones')
     st.caption(f"{jugador.get('codigo_jugador') or 'Código pendiente'} · {nombre_jugador(jugador)}")
     fechas,referencia=st.columns(2)
     seleccion=fechas.selectbox('Evaluación que quieres ver',list(range(len(ordenadas))),format_func=etiqueta,key=f'perfil_fecha_{clave}')
@@ -213,8 +213,9 @@ def mostrar_panel_evaluaciones(registros,jugador):
     st.caption('En conducción, Illinois y velocidades de 10 y 20 m, menos segundos es mejor.')
     if len(ordenadas)==1:
         st.info('Primera evaluación registrada. Cuando haya otra fecha podrás comparar la evolución.')
-    for campo,titulo in [('fortalezas','Fortalezas'),('aspectos_mejora','Aspectos por mejorar'),('recomendaciones','Recomendaciones')]:
-        st.markdown(f'**{titulo}**');st.text(str(actual.get(campo) or 'Sin observaciones registradas.'))
+    with st.expander('Observaciones del evaluador'):
+        for campo,titulo in [('fortalezas','Fortalezas'),('aspectos_mejora','Aspectos por mejorar'),('recomendaciones','Recomendaciones')]:
+            st.markdown(f'**{titulo}**');st.text(str(actual.get(campo) or 'Sin observaciones registradas.'))
     with st.expander('Ver evolución por fechas'):
         grafico_evolucion(ordenadas,[(c,n) for c,n,_ in PUNTUACIONES],'Efectividad · aciertos sobre 5')
         grafico_evolucion(ordenadas,[(c,n) for c,n,_,_ in TIEMPOS],'Pruebas cronometradas · segundos')

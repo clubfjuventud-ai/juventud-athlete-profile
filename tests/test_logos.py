@@ -96,7 +96,7 @@ class LogosInstitucionales(unittest.TestCase):
         self.assertTrue(any(b.label == 'Iniciar sesión' for b in app.button))
 
     def test_menu_ficha_y_administracion(self):
-        for seccion, imagenes in [('Inicio', 0), ('Jugadores Juventud', 2), ('Colegio Surcos', 2), ('Usuarios y representantes', 0)]:
+        for seccion, imagenes in [('Inicio', 0), ('Jugadores Juventud', 1), ('Colegio Surcos', 1), ('Usuarios y representantes', 0)]:
             with self.subTest(seccion=seccion):
                 cliente = Cliente(rol='administrador')
                 if seccion == 'Colegio Surcos':
@@ -151,7 +151,7 @@ class LogosOriginales(unittest.TestCase):
                         patch.object(utilidades, 'mostrar_marca', wraps=utilidades.mostrar_marca) as marcas:
                     app.run()
                 self.assertEqual(len(app.exception), 0, str(app.exception))
-                cantidad = 2 if seccion in ('Jugadores Juventud', 'Colegio Surcos') else 0
+                cantidad = 1 if seccion in ('Jugadores Juventud', 'Colegio Surcos') else 0
                 self.assertEqual(len(app.get('image')), cantidad)
                 self.assertEqual(marcas.call_count, cantidad)
                 if cantidad:
