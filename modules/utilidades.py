@@ -48,16 +48,29 @@ def opciones_expediente(jugadores):
 
 
 def ruta_logo(institucion):
-    """Devuelve el archivo de logo correspondiente si está instalado en assets/."""
-    ruta = LOGO_SURCOS if institucion == INSTITUCION_SURCOS else LOGO_JUVENTUD
-    return ruta if ruta.exists() else None
+    """Resuelve el logo institucional; None conserva la institución predeterminada."""
+    nombre = str(institucion or INSTITUCION_JUVENTUD).strip().casefold()
+    rutas = {
+        INSTITUCION_JUVENTUD.casefold(): LOGO_JUVENTUD,
+        INSTITUCION_SURCOS.casefold(): LOGO_SURCOS,
+    }
+    ruta = rutas.get(nombre)
+    return ruta if ruta is not None and ruta.is_file() else None
+
 
 def mostrar_marca(institucion=INSTITUCION_JUVENTUD, ancho=120):
-    ruta = ruta_logo(institucion)
+    """Muestra la imagen con su proporción original o el nombre si falta."""
+    nombre = str(institucion or INSTITUCION_JUVENTUD).strip()
+    ruta = ruta_logo(nombre)
     if ruta:
-        st.image(str(ruta), width=ancho)
-    else:
-        st.markdown(f"**{institucion.upper()}**")
+        try:
+            # Solo se fija el ancho: Streamlit calcula la altura original.
+            st.image(str(ruta), width=ancho)
+            return
+        except (OSError, ValueError):
+            pass
+    st.text(nombre)
+
 
 def nombre_jugador(jugador):
     return f"{jugador.get('apellidos', '')}, {jugador.get('nombres', '')}".strip(", ")

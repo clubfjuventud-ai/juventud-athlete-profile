@@ -108,9 +108,11 @@ st.markdown(
 if "sesion" not in st.session_state:
     st.session_state.sesion = None
 
-cab_logo, cab_texto = st.columns([1, 5])
+cab_logo, cab_surcos, cab_texto = st.columns([1, 1.5, 5])
 with cab_logo:
     mostrar_marca(INSTITUCION_JUVENTUD, ancho=110)
+with cab_surcos:
+    mostrar_marca(INSTITUCION_SURCOS, ancho=160)
 with cab_texto:
     st.markdown('<div class="eyebrow">Club Formativo Deportivo Especializado</div>', unsafe_allow_html=True)
     st.title("Juventud Athlete Profile")
@@ -193,7 +195,9 @@ rol_padre = rol == "padre"
 # ============================================================
 # NAVEGACIÓN
 # ============================================================
-mostrar_marca(INSTITUCION_JUVENTUD, ancho=145)
+with st.sidebar:
+    mostrar_marca(INSTITUCION_JUVENTUD, ancho=130)
+    mostrar_marca(INSTITUCION_SURCOS, ancho=180)
 st.sidebar.caption("JUVENTUD CON PROPÓSITO Y FUTURO")
 st.sidebar.write(f"**{nombre}**")
 st.sidebar.caption(f"Rol: {rol.capitalize()}")
@@ -361,6 +365,7 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                 format_func=opciones_jugadores.get, key=f"expediente_jugador_{institucion_actual}",
             )
             jugador = next(j for j in jugadores if j["id"] == jugador_id)
+            mostrar_marca(jugador.get("institucion"), ancho=140)
             st.markdown(f'<div class="hero"><div class="eyebrow">Expediente individual</div><h2>{nombre_jugador(jugador)}</h2><p>{jugador.get("codigo_jugador") or "Código pendiente"} · {categoria_jugador(jugador)} · {jugador.get("posicion_principal") or "Posición por definir"}</p></div>', unsafe_allow_html=True)
             foto_col, datos_col = st.columns([1, 4])
             with foto_col:
@@ -689,6 +694,11 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
 elif seccion == "Usuarios y representantes":
     encabezado_seccion("🔐 Usuarios y representantes", "Gestión de accesos y vínculos familiares.")
     if rol_admin:
+        marca_juventud, marca_surcos = st.columns(2)
+        with marca_juventud:
+            mostrar_marca(INSTITUCION_JUVENTUD, ancho=140)
+        with marca_surcos:
+            mostrar_marca(INSTITUCION_SURCOS, ancho=200)
         st.info("Por seguridad, la creación de usuarios y la asignación de representantes deben configurarse con un flujo administrativo controlado. Esta pantalla no modifica cuentas ni vínculos todavía.")
         st.write("Funciones previstas: activar/desactivar perfiles, asignar roles, vincular representantes con deportistas y asignar entrenadores a categorías.")
     else:

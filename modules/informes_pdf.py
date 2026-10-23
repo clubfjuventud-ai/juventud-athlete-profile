@@ -56,16 +56,24 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
         fontSize=8.5, leading=11, textColor=colors.HexColor("#333333"),
     ))
     institucion = jugador.get("institucion") or INSTITUCION_JUVENTUD
-    nombre_marca = "COLEGIO SURCOS" if institucion == INSTITUCION_SURCOS else "CLUB JUVENTUD"
+    nombre_marca = escape(institucion.upper())
     logo = ruta_logo(institucion)
     jugador, academico, deportivo, evaluaciones, evidencias = _escapar_datos(
         [jugador, academico, deportivo, evaluaciones, evidencias]
     )
     elementos = []
     if logo:
-        imagen_logo = PDFImage(str(logo), width=3.0 * cm, height=3.0 * cm, kind="bound", hAlign="CENTER")
-        elementos.append(imagen_logo)
-        elementos.append(Spacer(1, 4))
+        try:
+            # kind="bound" ajusta dentro de la caja sin alterar la relación ancho/alto.
+            imagen_logo = PDFImage(
+                str(logo), width=4.5 * cm, height=3.0 * cm,
+                kind="bound", hAlign="CENTER", lazy=0,
+            )
+            elementos.append(imagen_logo)
+            elementos.append(Spacer(1, 4))
+        except (OSError, ValueError):
+            # El nombre institucional permanece visible aunque la imagen no se pueda leer.
+            pass
     elementos.extend([
         Paragraph(nombre_marca, estilos["Marca"]),
         Paragraph("EXPEDIENTE DEL ESTUDIANTE-ATLETA", estilos["TituloClub"]),
