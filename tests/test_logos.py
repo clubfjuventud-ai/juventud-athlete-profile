@@ -84,14 +84,14 @@ class LogosInstitucionales(unittest.TestCase):
     def app(self):
         return AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'app.py'), default_timeout=15)
 
-    def test_acceso_muestra_ambas_instituciones_sin_conectar_supabase(self):
+    def test_acceso_no_muestra_logos_sin_conectar_supabase(self):
         app = self.app().run()
         self.assertEqual(len(app.exception), 0)
-        self.assertEqual(len(app.get('image')), 2)
+        self.assertEqual(len(app.get('image')), 0)
         self.assertTrue(any(b.label == 'Iniciar sesión' for b in app.button))
 
     def test_menu_ficha_y_administracion(self):
-        for seccion, imagenes in [('Jugadores Juventud', 6), ('Colegio Surcos', 6), ('Usuarios y representantes', 6)]:
+        for seccion, imagenes in [('Inicio', 0), ('Jugadores Juventud', 2), ('Colegio Surcos', 2), ('Usuarios y representantes', 0)]:
             with self.subTest(seccion=seccion):
                 cliente = Cliente(rol='administrador')
                 if seccion == 'Colegio Surcos':
@@ -100,19 +100,20 @@ class LogosInstitucionales(unittest.TestCase):
                 app = self.app()
                 app.session_state.sesion = SimpleNamespace(user=SimpleNamespace(id='prueba', email='prueba@example.invalid'))
                 app.session_state.menu_principal = seccion
-                with patch.object(autenticacion, 'conectar_supabase', return_value=cliente):
+                with patch.object(autenticacion, 'conectar_supabase', return_value=cliente), \
+                        patch.object(utilidades, 'mostrar_marca', wraps=utilidades.mostrar_marca) as marcas:
                     app.run()
                 self.assertEqual(len(app.exception), 0, str(app.exception))
                 self.assertEqual(len(app.get('image')), imagenes)
-                self.assertEqual(len(app.sidebar.get('image')), 2)
+                self.assertEqual(len(app.sidebar.get('image')), 0)
 
-    def test_acceso_sin_archivos_muestra_nombres(self):
+    def test_acceso_sin_archivos_no_muestra_logos(self):
         self.juventud.unlink()
         self.surcos.unlink()
         app = self.app().run()
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(len(app.get('image')), 0)
-        self.assertEqual({elemento.value for elemento in app.text}, {INSTITUCION_JUVENTUD, INSTITUCION_SURCOS})
+        self.assertEqual(len(app.text), 0)
 
 
 class LogosOriginales(unittest.TestCase):
@@ -123,17 +124,16 @@ class LogosOriginales(unittest.TestCase):
                 self.assertIsNotNone(ruta)
                 with Image.open(ruta) as imagen:
                     self.assertEqual(imagen.format, 'PNG')
-                    self.assertGreater(imagen.width, 0)
-                    self.assertGreater(imagen.height, 0)
+                    self.assertEqual(max(imagen.size), 3840)
                     imagen.verify()
 
     def test_acceso_con_png_originales(self):
         app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'app.py'), default_timeout=15).run()
         self.assertEqual(len(app.exception), 0)
-        self.assertEqual(len(app.get('image')), 2)
+        self.assertEqual(len(app.get('image')), 0)
 
     def test_menu_fichas_y_administracion_con_png_originales(self):
-        for seccion in ('Jugadores Juventud', 'Colegio Surcos', 'Usuarios y representantes'):
+        for seccion in ('Inicio', 'Jugadores Juventud', 'Colegio Surcos', 'Usuarios y representantes'):
             with self.subTest(seccion=seccion):
                 cliente = Cliente(rol='administrador')
                 if seccion == 'Colegio Surcos':
@@ -142,11 +142,17 @@ class LogosOriginales(unittest.TestCase):
                 app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'app.py'), default_timeout=15)
                 app.session_state.sesion = SimpleNamespace(user=SimpleNamespace(id='prueba', email='prueba@example.invalid'))
                 app.session_state.menu_principal = seccion
-                with patch.object(autenticacion, 'conectar_supabase', return_value=cliente):
+                with patch.object(autenticacion, 'conectar_supabase', return_value=cliente), \
+                        patch.object(utilidades, 'mostrar_marca', wraps=utilidades.mostrar_marca) as marcas:
                     app.run()
                 self.assertEqual(len(app.exception), 0, str(app.exception))
-                self.assertEqual(len(app.get('image')), 6)
-                self.assertEqual(len(app.sidebar.get('image')), 2)
+                cantidad = 2 if seccion in ('Jugadores Juventud', 'Colegio Surcos') else 0
+                self.assertEqual(len(app.get('image')), cantidad)
+                self.assertEqual(marcas.call_count, cantidad)
+                if cantidad:
+                    institucion = INSTITUCION_SURCOS if seccion == 'Colegio Surcos' else INSTITUCION_JUVENTUD
+                    self.assertTrue(all(llamada.args[0] == institucion for llamada in marcas.call_args_list))
+                self.assertEqual(len(app.sidebar.get('image')), 0)
                 self.assertEqual(len(app.error), 0)
 
     def test_pdf_incrusta_original_correcto_sin_deformarlo(self):

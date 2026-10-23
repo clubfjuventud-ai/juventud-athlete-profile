@@ -108,15 +108,9 @@ st.markdown(
 if "sesion" not in st.session_state:
     st.session_state.sesion = None
 
-cab_logo, cab_surcos, cab_texto = st.columns([1, 1.5, 5])
-with cab_logo:
-    mostrar_marca(INSTITUCION_JUVENTUD, ancho=110)
-with cab_surcos:
-    mostrar_marca(INSTITUCION_SURCOS, ancho=160)
-with cab_texto:
-    st.markdown('<div class="eyebrow">Club Formativo Deportivo Especializado</div>', unsafe_allow_html=True)
-    st.title("Juventud Athlete Profile")
-    st.caption("Sistema de gestión y desarrollo del estudiante-atleta")
+st.markdown('<div class="eyebrow">Club Formativo Deportivo Especializado</div>', unsafe_allow_html=True)
+st.title("Juventud Athlete Profile")
+st.caption("Sistema de gestión y desarrollo del estudiante-atleta")
 
 # ============================================================
 # LOGIN
@@ -195,9 +189,6 @@ rol_padre = rol == "padre"
 # ============================================================
 # NAVEGACIÓN
 # ============================================================
-with st.sidebar:
-    mostrar_marca(INSTITUCION_JUVENTUD, ancho=130)
-    mostrar_marca(INSTITUCION_SURCOS, ancho=180)
 st.sidebar.caption("JUVENTUD CON PROPÓSITO Y FUTURO")
 st.sidebar.write(f"**{nombre}**")
 st.sidebar.caption(f"Rol: {rol.capitalize()}")
@@ -694,11 +685,6 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
 elif seccion == "Usuarios y representantes":
     encabezado_seccion("🔐 Usuarios y representantes", "Gestión de accesos y vínculos familiares.")
     if rol_admin:
-        marca_juventud, marca_surcos = st.columns(2)
-        with marca_juventud:
-            mostrar_marca(INSTITUCION_JUVENTUD, ancho=140)
-        with marca_surcos:
-            mostrar_marca(INSTITUCION_SURCOS, ancho=200)
         st.info("Por seguridad, la creación de usuarios y la asignación de representantes deben configurarse con un flujo administrativo controlado. Esta pantalla no modifica cuentas ni vínculos todavía.")
         st.write("Funciones previstas: activar/desactivar perfiles, asignar roles, vincular representantes con deportistas y asignar entrenadores a categorías.")
     else:

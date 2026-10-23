@@ -1,12 +1,12 @@
 # Logos institucionales
 
-Los archivos originales deben guardarse como:
+- `logo_juventud.png`: escudo negro con dorado, 3283 × 3840 píxeles, con transparencia.
+- `logo_surcos.png`: logo de Colegio Surcos, 3840 × 2307 píxeles.
 
-- `logo_juventud.png`: escudo de Club Juventud negro con dorado, sin el escudo blanco de la imagen comparativa.
-- `logo_surcos.png`: logo original de Colegio Surcos.
+Versiones ampliadas desde los PNG originales con remuestreo Lanczos y un enfoque suave, conservando proporciones, composición y colores. La ampliación aumenta la resolución del archivo; no convierte los originales en ilustraciones vectoriales ni recupera detalle nativo inexistente.
 
-La interfaz fija únicamente el ancho. Los PDF ajustan cada imagen dentro de una caja conservando su proporción original. Si falta una imagen o no se puede leer, se mantiene el nombre de la institución.
+Cada logo se muestra únicamente en la sección y ficha de su institución y en sus PDF. El acceso, Inicio, menú lateral y administración no muestran logos. Si falta la imagen en una sección institucional, se muestra su nombre sin provocar errores.
 
-Los PNG originales están incluidos. Las pruebas verifican tanto estos archivos como imágenes temporales para cubrir proporciones distintas y archivos ausentes o inválidos.
+La interfaz fija únicamente el ancho. Los PDF ajustan cada imagen dentro de una caja conservando su proporción original.
 
 Validación: `python -B -m unittest discover -s tests -v`.
