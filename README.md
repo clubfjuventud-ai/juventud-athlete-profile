@@ -64,3 +64,12 @@ Surcos usa su nombre, logo y acentos verdes y azules. Juventud conserva su ident
 Solo una cuenta administradora dispone de **menú lateral → Vista previa de roles → Ver la interfaz como**. Permite elegir Entrenador, Autoridad o Representante y regresar a **Mi cuenta**. La vista previa conserva la sesión real y sus datos visibles; no suplanta a otra persona, no reproduce sus filtros RLS ni sus vínculos. Las opciones de guardar están deshabilitadas y los manejadores de escritura rechazan la vista previa. Las consultas siguen usando el cliente autenticado existente. Representante oculta la pestaña y consultas académicas, manteniendo las restricciones de exportación existentes.
 
 En **Informe PDF**, pulsa **Preparar expediente PDF** antes de descargarlo. El resultado solo se guarda en la sesión y deja de ofrecerse cuando cambian el deportista, los datos incluidos, las opciones, la cuenta o la vista de rol.
+
+
+### Acceso de representantes
+
+Una cuenta con rol `padre` entra directamente al expediente si el servidor devuelve un único deportista visible. No muestra menú de instituciones, directorio ni selección por código. Si el servidor devuelve varios representados autorizados, solo permite alternar entre esas filas mediante **Mis representados**, por nombre. Si no devuelve ninguno, no abre expedientes y pide revisar el vínculo. No consulta categorías ni historial académico.
+
+La interfaz utiliza las filas que devuelve el cliente autenticado existente; las políticas RLS siguen siendo responsables de restringirlas a los deportistas vinculados a esa cuenta. Este cambio no inspecciona ni modifica las políticas desplegadas. Las pruebas simulan respuestas filtradas del servidor; no sustituyen una verificación con una cuenta real en producción.
+
+En la vista previa de Representante, una cuenta administradora puede elegir **Ejemplo de expediente · Solo administrador → Deportista para la vista previa**. Ese control es exclusivo de la vista previa; no aparece para cuentas reales de representantes y no crea ni cambia vínculos.

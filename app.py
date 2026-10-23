@@ -12,7 +12,7 @@ from modules.utilidades import (
     nombre_jugador, categoria_jugador, categoria_por_fecha,
     fecha_legible, puede_editar, opciones_expediente, obtener_paginas,
 )
-from modules.interfaz import aplicar_estilo, mostrar_cabecera_jugador, mostrar_pulso, preparar_pdf
+from modules.interfaz import aplicar_estilo, mostrar_cabecera_jugador, mostrar_pulso, preparar_pdf, seleccionar_representado
 from modules.analisis_rendimiento import mostrar_analisis_rendimiento
 from modules.evaluaciones_visuales import mostrar_panel_evaluaciones, validar_resultados
 
@@ -120,6 +120,16 @@ rol_padre = rol == "padre"
 muestra_formularios = puede_editar(rol)
 permite_edicion = muestra_formularios and not modo_previa
 
+# Cargar deportistas una vez por ejecución; las políticas RLS de Supabase filtran resultados.
+error_jugadores = False
+try:
+    jugadores = obtener_jugadores(supabase)
+except Exception as error:
+    logging.getLogger(__name__).warning("Consulta de jugadores fallida (%s)", type(error).__name__)
+    jugadores = []
+    error_jugadores = True
+
+
 # ============================================================
 # NAVEGACIÓN
 # ============================================================
@@ -127,12 +137,19 @@ st.sidebar.markdown("### Mi espacio deportivo")
 st.sidebar.write(f"**{nombre}**")
 st.sidebar.caption(f"Rol: {rol.capitalize()}" + (" · vista previa" if modo_previa else ""))
 st.sidebar.divider()
-opciones_menu = ["Inicio", "Jugadores Juventud", "Colegio Surcos"]
-if rol_admin:
-    opciones_menu.append("Usuarios y representantes")
-if st.session_state.get("menu_principal") not in opciones_menu:
-    st.session_state.menu_principal = "Inicio"
-seccion = st.sidebar.radio("MENÚ PRINCIPAL", opciones_menu, key="menu_principal")
+jugador_representado = None
+if rol_padre:
+    jugador_representado = seleccionar_representado(jugadores, str(usuario.id), modo_previa)
+    institucion_representado = (jugador_representado or {}).get("institucion") or INSTITUCION_JUVENTUD
+    seccion = "Colegio Surcos" if institucion_representado == INSTITUCION_SURCOS else "Jugadores Juventud"
+    st.sidebar.caption("Mi representado · Seguimiento individual")
+else:
+    opciones_menu = ["Inicio", "Jugadores Juventud", "Colegio Surcos"]
+    if rol_admin:
+        opciones_menu.append("Usuarios y representantes")
+    if st.session_state.get("menu_principal") not in opciones_menu:
+        st.session_state.menu_principal = "Inicio"
+    seccion = st.sidebar.radio("MENÚ PRINCIPAL", opciones_menu, key="menu_principal")
 st.sidebar.divider()
 if st.sidebar.button("Cerrar sesión", use_container_width=True):
     cerrar_sesion()
@@ -145,13 +162,16 @@ if seccion not in ("Jugadores Juventud", "Colegio Surcos"):
 if modo_previa:
     st.info(f"Vista previa: {vista}. Solo lectura con los datos de tu cuenta administradora. Para salir, selecciona «Mi cuenta» en el menú lateral.")
 
-# Cargar deportistas una vez por ejecución; las políticas RLS de Supabase filtran resultados.
-try:
-    jugadores = obtener_jugadores(supabase)
-except Exception as error:
-    logging.getLogger(__name__).warning("Consulta de jugadores fallida (%s)", type(error).__name__)
+if error_jugadores:
     st.error("No se pudieron cargar los deportistas. Reintenta recargando la página.")
     st.stop()
+if rol_padre and jugador_representado is None:
+    st.title("Mi representado")
+    st.info("No hay un deportista disponible para esta cuenta. Solicita al administrador que revise el vínculo con tu representado.")
+    st.stop()
+if rol_padre:
+    # El título del navegador también corresponde al expediente abierto sin menú.
+    st.set_page_config(page_title="Surcos · Desarrollo deportivo" if es_surcos else "Club Juventud · Mi representado")
 
 # ============================================================
 # INICIO
@@ -188,7 +208,7 @@ if seccion == "Inicio":
 # ============================================================
 elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
     institucion_actual = INSTITUCION_SURCOS if seccion == "Colegio Surcos" else INSTITUCION_JUVENTUD
-    jugadores = [j for j in jugadores if (j.get("institucion") or INSTITUCION_JUVENTUD) == institucion_actual]
+    jugadores = [jugador_representado] if rol_padre else [j for j in jugadores if (j.get("institucion") or INSTITUCION_JUVENTUD) == institucion_actual]
     with st.container(key="cabecera_institucion"):
         marca_col, titulo_col = st.columns([1, 4])
         with marca_col:
@@ -197,20 +217,24 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
             st.markdown('<div class="eyebrow">Desarrollo deportivo y formativo</div>', unsafe_allow_html=True)
             st.title("Surcos" if es_surcos else "Club Juventud")
             st.caption("Cada evaluación cuenta una parte de su evolución.")
-    nombres_tabs = ["Expediente individual", "Directorio"]
-    if muestra_formularios:
-        nombres_tabs.append("Registrar deportista")
-    tabs_institucion = st.tabs(nombres_tabs)
-    tab_expediente, tab_consulta = tabs_institucion[:2]
+    if rol_padre:
+        tab_expediente = st.container()
+        categorias_lista = []
+    else:
+        nombres_tabs = ["Expediente individual", "Directorio"]
+        if muestra_formularios:
+            nombres_tabs.append("Registrar deportista")
+        tabs_institucion = st.tabs(nombres_tabs)
+        tab_expediente, tab_consulta = tabs_institucion[:2]
 
-    # Categorías activas
-    try:
-        categorias_resultado = supabase.table("categorias").select("id, nombre, edad_minima, edad_maxima").eq("activa", True).order("nombre").execute()
-        categorias_lista = categorias_resultado.data or []
-    except Exception as error:
-        logging.getLogger(__name__).warning("Consulta de categorías fallida (%s)", type(error).__name__)
-        st.error("No se pudieron cargar las categorías. Reintenta recargando la página.")
-        st.stop()
+        # Categorías activas
+        try:
+            categorias_resultado = supabase.table("categorias").select("id, nombre, edad_minima, edad_maxima").eq("activa", True).order("nombre").execute()
+            categorias_lista = categorias_resultado.data or []
+        except Exception as error:
+            logging.getLogger(__name__).warning("Consulta de categorías fallida (%s)", type(error).__name__)
+            st.error("No se pudieron cargar las categorías. Reintenta recargando la página.")
+            st.stop()
 
     if muestra_formularios:
         with tabs_institucion[2]:
@@ -280,34 +304,39 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                         except Exception:
                             st.error("No se pudo guardar el deportista. Revisa si la cédula ya está registrada y confirma que ejecutaste la migración SQL.")
 
-    with tab_consulta:
-        if jugadores:
-            busqueda = st.text_input("Buscar por código, nombre o apellido", key="buscar_jugador", placeholder="Escribe un código o un apellido")
-            filtrados = [j for j in jugadores if busqueda.strip().casefold() in (str(j.get("codigo_jugador") or "") + " " + nombre_jugador(j)).casefold()] if busqueda.strip() else jugadores
-            filas = [{
-                "Código": j.get("codigo_jugador") or "Pendiente",
-                "Deportista": nombre_jugador(j),
-                "Categoría": categoria_jugador(j),
-                "Fecha de nacimiento": fecha_legible(j.get("fecha_nacimiento")),
-                "Curso": j.get("curso") or "",
-                "Posición": j.get("posicion_principal") or "",
-                "Estado": j.get("estado") or "",
-            } for j in filtrados]
-            st.dataframe(filas, use_container_width=True, hide_index=True)
-            st.caption(f"Deportistas visibles: {len(filtrados)}")
-        else:
-            st.info("No hay deportistas visibles para tu cuenta.")
+    if not rol_padre:
+        with tab_consulta:
+            if jugadores:
+                busqueda = st.text_input("Buscar por código, nombre o apellido", key="buscar_jugador", placeholder="Escribe un código o un apellido")
+                filtrados = [j for j in jugadores if busqueda.strip().casefold() in (str(j.get("codigo_jugador") or "") + " " + nombre_jugador(j)).casefold()] if busqueda.strip() else jugadores
+                filas = [{
+                    "Código": j.get("codigo_jugador") or "Pendiente",
+                    "Deportista": nombre_jugador(j),
+                    "Categoría": categoria_jugador(j),
+                    "Fecha de nacimiento": fecha_legible(j.get("fecha_nacimiento")),
+                    "Curso": j.get("curso") or "",
+                    "Posición": j.get("posicion_principal") or "",
+                    "Estado": j.get("estado") or "",
+                } for j in filtrados]
+                st.dataframe(filas, use_container_width=True, hide_index=True)
+                st.caption(f"Deportistas visibles: {len(filtrados)}")
+            else:
+                st.info("No hay deportistas visibles para tu cuenta.")
 
     with tab_expediente:
         if not jugadores:
             st.info("No hay deportistas disponibles para consultar.")
         else:
-            opciones_jugadores = opciones_expediente(jugadores)
-            jugador_id = st.selectbox(
-                "Selecciona el código del deportista", list(opciones_jugadores),
-                format_func=opciones_jugadores.get, key=f"expediente_jugador_{institucion_actual}",
-            )
-            jugador = next(j for j in jugadores if j["id"] == jugador_id)
+            if rol_padre:
+                jugador = jugador_representado
+                jugador_id = jugador["id"]
+            else:
+                opciones_jugadores = opciones_expediente(jugadores)
+                jugador_id = st.selectbox(
+                    "Selecciona el código del deportista", list(opciones_jugadores),
+                    format_func=opciones_jugadores.get, key=f"expediente_jugador_{institucion_actual}",
+                )
+                jugador = next(j for j in jugadores if j["id"] == jugador_id)
             mostrar_cabecera_jugador(jugador)
 
             # Un resultado fallido se conserva como None para distinguirlo de una lista vacía.

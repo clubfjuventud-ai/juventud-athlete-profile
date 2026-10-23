@@ -58,8 +58,11 @@ class InterfazRenovada(unittest.TestCase):
                 else:
                     self.assertNotIn('Registrar deportista', self.etiquetas(app))
                     self.assertFalse(any(b.label.startswith('Guardar') for b in app.button))
-                menu = next(r for r in app.radio if r.label == 'MENÚ PRINCIPAL')
-                self.assertNotIn('Usuarios y representantes', menu.options)
+                menus = [r for r in app.radio if r.label == 'MENÚ PRINCIPAL']
+                if vista == 'Representante':
+                    self.assertEqual(menus, [])
+                else:
+                    self.assertNotIn('Usuarios y representantes', menus[0].options)
                 self.assertTrue(any('Solo lectura' in i.value for i in app.info))
                 self.assertTrue(any(b.label == 'Análisis de rendimiento inteligente' for b in app.button))
                 if vista == 'Representante':
@@ -96,9 +99,12 @@ class InterfazRenovada(unittest.TestCase):
             with self.subTest(rol=rol):
                 app, _ = self.iniciar(rol=rol, vista='Mi cuenta', seccion='Usuarios y representantes')
                 self.assertFalse(any(s.label == 'Ver la interfaz como' for s in app.radio))
-                menu = next(r for r in app.radio if r.label == 'MENÚ PRINCIPAL')
-                self.assertEqual(menu.value, 'Inicio')
-                self.assertNotIn('Usuarios y representantes', menu.options)
+                menus = [r for r in app.radio if r.label == 'MENÚ PRINCIPAL']
+                if rol == 'padre':
+                    self.assertEqual(menus, [])
+                else:
+                    self.assertEqual(menus[0].value, 'Inicio')
+                    self.assertNotIn('Usuarios y representantes', menus[0].options)
 
     def test_entrenador_real_conserva_edicion_y_padre_no(self):
         entrenador, _ = self.iniciar(rol='entrenador')

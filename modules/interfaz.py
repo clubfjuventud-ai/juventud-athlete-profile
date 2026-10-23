@@ -11,6 +11,29 @@ from modules.utilidades import nombre_jugador, categoria_jugador
 from modules.informes_pdf import generar_pdf
 
 
+def seleccionar_representado(jugadores, usuario_id, vista_previa=False):
+    """La cuenta real recibe solo filas autorizadas por RLS; la previa elige un ejemplo."""
+    if not jugadores:
+        return None
+    if len(jugadores) == 1:
+        return jugadores[0]
+    etiquetas = {}
+    for indice, jugador in enumerate(jugadores, 1):
+        nombre = nombre_jugador(jugador) or "Deportista"
+        repetido = sum(nombre_jugador(j) == nombre_jugador(jugador) for j in jugadores) > 1
+        etiquetas[jugador["id"]] = nombre + (f" · Representado {indice}" if repetido else "")
+    clave = f"{'ejemplo_representante' if vista_previa else 'mis_representados'}_{usuario_id}"
+    if st.session_state.get(clave) not in etiquetas:
+        st.session_state[clave] = jugadores[0]["id"]
+    if vista_previa:
+        with st.sidebar.expander("Ejemplo de expediente · Solo administrador"):
+            st.caption("Elige un deportista para revisar la pantalla. Esta selección es una herramienta de tu cuenta administradora; no aparece a los representantes.")
+            seleccionado = st.selectbox("Deportista para la vista previa", list(etiquetas), format_func=etiquetas.get, key=clave)
+    else:
+        seleccionado = st.sidebar.selectbox("Mis representados", list(etiquetas), format_func=etiquetas.get, key=clave)
+    return next(j for j in jugadores if j["id"] == seleccionado)
+
+
 def aplicar_estilo(surcos=False):
     acento, suave = ("#94C93D", "#123346") if surcos else ("#E4C365", "#302A1A")
     st.markdown(f"""
