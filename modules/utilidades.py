@@ -1,4 +1,5 @@
 import re
+from collections import Counter
 from datetime import date
 import pandas as pd
 import streamlit as st
@@ -13,18 +14,38 @@ def encabezado_seccion(titulo, descripcion=None):
     if descripcion:
         st.caption(descripcion)
 
+def obtener_paginas(crear_consulta, tamano=500):
+    """Recorre también respuestas limitadas por el máximo configurado de la API."""
+    registros = []
+    while True:
+        pagina = crear_consulta().range(len(registros), len(registros) + tamano - 1).execute().data
+        if not pagina:
+            return registros
+        registros.extend(pagina)
+
+
 def obtener_jugadores(supabase):
-    respuesta = (
+    return obtener_paginas(lambda: (
         supabase.table("jugadores")
         .select(
             "id, codigo_jugador, cedula, nombres, apellidos, fecha_nacimiento, fecha_ingreso, curso, "
             "posicion_principal, posicion_secundaria, pie_dominante, estatura, peso, fotografia_url, "
             "nivel_competitivo, estado, categoria_id, institucion, categorias(nombre, edad_minima, edad_maxima)"
         )
-        .order("apellidos")
-        .execute()
-    )
-    return respuesta.data or []
+        .order("apellidos").order("id")
+    ))
+
+
+def opciones_expediente(jugadores):
+    """Mantiene cada ID independiente y presenta el código como etiqueta."""
+    codigos = [str(j.get("codigo_jugador") or "").strip() for j in jugadores]
+    repetidos = {codigo for codigo, cantidad in Counter(codigos).items() if cantidad > 1}
+    return {
+        j["id"]: (f"{codigo or 'Sin código'} · ID: {j['id']}"
+                  if not codigo or codigo in repetidos else codigo)
+        for j, codigo in zip(jugadores, codigos)
+    }
+
 
 def ruta_logo(institucion):
     """Devuelve el archivo de logo correspondiente si está instalado en assets/."""
@@ -55,21 +76,31 @@ def obtener_edad(fecha_nacimiento, fecha_referencia=None):
 def categoria_por_fecha(fecha_nacimiento, categorias):
     """Busca por rangos de edad y, si no están configurados, usa nombres como Sub-8/Sub-10."""
     edad = obtener_edad(fecha_nacimiento)
+    if edad < 0:
+        return None
+    coincidencias = []
+    alternativas = []
     for categoria in categorias:
         minimo = categoria.get("edad_minima")
         maximo = categoria.get("edad_maxima")
-        if minimo is not None and maximo is not None and int(minimo) <= edad <= int(maximo):
-            return categoria
-    # Alternativa para categorías típicas Sub-8, Sub-10, Sub-12, Sub-14 y Sub-16.
-    categorias_con_limite = []
-    for categoria in categorias:
-        match = re.search(r"sub\s*[- ]?\s*(\d+)", str(categoria.get("nombre", "")), re.IGNORECASE)
-        if match:
-            categorias_con_limite.append((int(match.group(1)), categoria))
-    for limite, categoria in sorted(categorias_con_limite, key=lambda item: item[0]):
-        if edad <= limite:
-            return categoria
+        if minimo is not None or maximo is not None:
+            # Un rango parcial también es explícito y no usa la alternativa por nombre.
+            if ((minimo is None or edad >= int(minimo))
+                    and (maximo is None or edad <= int(maximo))):
+                coincidencias.append(categoria)
+        else:
+            match = re.fullmatch(r"sub\s*[- ]?\s*(\d+)", str(categoria.get("nombre", "")).strip(), re.IGNORECASE)
+            if match and edad <= int(match.group(1)):
+                alternativas.append((int(match.group(1)), categoria))
+    if coincidencias:
+        # Rangos superpuestos requieren corregir la configuración, no elegir al azar.
+        return coincidencias[0] if len(coincidencias) == 1 else None
+    if alternativas:
+        limite = min(item[0] for item in alternativas)
+        candidatas = [categoria for valor, categoria in alternativas if valor == limite]
+        return candidatas[0] if len(candidatas) == 1 else None
     return None
+
 
 def grafico_evolucion(registros, campos, titulo, ylabel=None):
     """Dibuja evolución cronológica solo cuando existen datos para esas métricas."""

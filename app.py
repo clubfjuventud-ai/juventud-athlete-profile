@@ -1,4 +1,5 @@
 import io
+import logging
 import re
 from pathlib import Path
 from datetime import date, datetime
@@ -12,11 +13,11 @@ from modules.configuracion import (
     BASE_DIR, ASSETS_DIR, LOGO_JUVENTUD, LOGO_SURCOS,
     INSTITUCION_JUVENTUD, INSTITUCION_SURCOS
 )
-from modules.autenticacion import conectar_supabase, cerrar_sesion
+from modules.autenticacion import conectar_supabase, cerrar_sesion, SesionCaducada
 from modules.utilidades import (
     encabezado_seccion, obtener_jugadores, ruta_logo, mostrar_marca,
     nombre_jugador, categoria_jugador, obtener_edad, categoria_por_fecha,
-    grafico_evolucion, fecha_legible, puede_editar
+    grafico_evolucion, fecha_legible, puede_editar, opciones_expediente, obtener_paginas
 )
 from modules.informes_pdf import generar_pdf
 
@@ -153,9 +154,9 @@ if st.session_state.sesion is None:
 # ============================================================
 # VALIDACIÓN DE PERFIL
 # ============================================================
-usuario = st.session_state.sesion.user
 try:
     supabase = conectar_supabase()
+    usuario = st.session_state.sesion.user
     resultado_perfil = (
         supabase.table("perfiles")
         .select("*")
@@ -164,7 +165,13 @@ try:
         .execute()
     )
     perfil = resultado_perfil.data
-except Exception:
+except SesionCaducada:
+    st.warning("Tu sesión ha caducado. Vuelve a iniciar sesión.")
+    if st.button("Volver al inicio de sesión"):
+        st.rerun()
+    st.stop()
+except Exception as error:
+    logging.getLogger(__name__).warning("Consulta de perfil fallida (%s)", type(error).__name__)
     st.error("No se pudo consultar tu perfil. Comprueba la conexión y vuelve a iniciar sesión.")
     if st.button("Cerrar sesión"):
         cerrar_sesion()
@@ -203,8 +210,10 @@ if st.sidebar.button("Cerrar sesión", use_container_width=True):
 # Cargar deportistas una vez por ejecución; las políticas RLS de Supabase filtran resultados.
 try:
     jugadores = obtener_jugadores(supabase)
-except Exception:
-    jugadores = []
+except Exception as error:
+    logging.getLogger(__name__).warning("Consulta de jugadores fallida (%s)", type(error).__name__)
+    st.error("No se pudieron cargar los deportistas. Reintenta recargando la página.")
+    st.stop()
 
 # ============================================================
 # INICIO
@@ -249,8 +258,10 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
     try:
         categorias_resultado = supabase.table("categorias").select("id, nombre, edad_minima, edad_maxima").eq("activa", True).order("nombre").execute()
         categorias_lista = categorias_resultado.data or []
-    except Exception:
-        categorias_lista = []
+    except Exception as error:
+        logging.getLogger(__name__).warning("Consulta de categorías fallida (%s)", type(error).__name__)
+        st.error("No se pudieron cargar las categorías. Reintenta recargando la página.")
+        st.stop()
     mapa_categorias = {c["nombre"]: c["id"] for c in categorias_lista}
 
     with tab_registro:
@@ -344,9 +355,11 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
         if not jugadores:
             st.info("No hay deportistas disponibles para consultar.")
         else:
-            opciones_jugadores = {f"{nombre_jugador(j)} · {categoria_jugador(j)}": j["id"] for j in jugadores}
-            elegido = st.selectbox("Selecciona un deportista", list(opciones_jugadores.keys()), key="expediente_jugador")
-            jugador_id = opciones_jugadores[elegido]
+            opciones_jugadores = opciones_expediente(jugadores)
+            jugador_id = st.selectbox(
+                "Selecciona el código del deportista", list(opciones_jugadores),
+                format_func=opciones_jugadores.get, key=f"expediente_jugador_{institucion_actual}",
+            )
             jugador = next(j for j in jugadores if j["id"] == jugador_id)
             st.markdown(f'<div class="hero"><div class="eyebrow">Expediente individual</div><h2>{nombre_jugador(jugador)}</h2><p>{jugador.get("codigo_jugador") or "Código pendiente"} · {categoria_jugador(jugador)} · {jugador.get("posicion_principal") or "Posición por definir"}</p></div>', unsafe_allow_html=True)
             foto_col, datos_col = st.columns([1, 4])
@@ -369,23 +382,21 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
             c.metric("Estatura", f"{jugador.get('estatura')} cm" if jugador.get("estatura") else "—")
             d.metric("Pie dominante", jugador.get("pie_dominante") or "—")
 
-            # Leer registros asociados al jugador; Supabase RLS determina lo permitido.
-            try:
-                hist_dep = (supabase.table("historial_deportivo").select("*").eq("jugador_id", jugador_id).order("temporada", desc=True).execute().data or [])
-            except Exception:
-                hist_dep = []
-            try:
-                hist_acad = (supabase.table("historial_academico").select("*").eq("jugador_id", jugador_id).order("periodo_academico", desc=True).execute().data or [])
-            except Exception:
-                hist_acad = []
-            try:
-                evals = (supabase.table("evaluaciones_integrales").select("*").eq("jugador_id", jugador_id).order("fecha_evaluacion", desc=True).execute().data or [])
-            except Exception:
-                evals = []
-            try:
-                evidencias = (supabase.table("evidencias_deportivas").select("*").eq("jugador_id", jugador_id).order("created_at", desc=True).execute().data or [])
-            except Exception:
-                evidencias = []
+            # Un resultado fallido se conserva como None para distinguirlo de una lista vacía.
+            def cargar_historial(tabla, orden):
+                try:
+                    return obtener_paginas(lambda: (
+                        supabase.table(tabla).select("*").eq("jugador_id", jugador_id)
+                        .order(orden, desc=True).order("id")
+                    ))
+                except Exception as error:
+                    logging.getLogger(__name__).warning("Consulta de %s fallida (%s)", tabla, type(error).__name__)
+                    return None
+
+            hist_dep = cargar_historial("historial_deportivo", "temporada")
+            hist_acad = [] if rol_padre else cargar_historial("historial_academico", "periodo_academico")
+            evals = cargar_historial("evaluaciones_integrales", "fecha_evaluacion")
+            evidencias = cargar_historial("evidencias_deportivas", "created_at")
 
             st.divider()
             tab_resumen, tab_deportivo, tab_academico, tab_eval, tab_evidencias, tab_pdf = st.tabs(["Resumen", "Historial deportivo", "Historial académico", "Evaluaciones", "Evidencias", "Exportar PDF"])
@@ -401,7 +412,9 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
 
             with tab_deportivo:
                 st.markdown("#### Temporadas y trayectoria")
-                if hist_dep:
+                if hist_dep is None:
+                    st.error("No se pudo cargar el historial deportivo. Reintenta recargando la página.")
+                elif hist_dep:
                     for reg in hist_dep:
                         with st.expander(f"{reg.get('temporada', 'Temporada')} · {reg.get('club_equipo') or 'Equipo no indicado'}"):
                             st.write(f"Categoría: {reg.get('categoria') or '—'} · Posición: {reg.get('posicion') or '—'} · Camiseta: {reg.get('numero_camiseta') or '—'}")
@@ -418,7 +431,7 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                                 st.write(f"**Observaciones:** {reg['observaciones']}")
                 else:
                     st.info("Todavía no hay temporadas deportivas registradas.")
-                if puede_editar(rol):
+                if hist_dep is not None and puede_editar(rol):
                     with st.expander("➕ Añadir temporada deportiva"):
                         with st.form(f"form_histdep_{jugador_id}"):
                             t1, t2 = st.columns(2)
@@ -470,7 +483,9 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                     st.warning("El historial académico no está habilitado para representantes en esta versión.")
                 else:
                     st.markdown("#### Evolución académica")
-                    if hist_acad:
+                    if hist_acad is None:
+                        st.error("No se pudo cargar el historial académico. Reintenta recargando la página.")
+                    elif hist_acad:
                         st.dataframe([{
                             "Periodo": r.get("periodo_academico"), "Curso": r.get("curso") or "",
                             "Promedio": r.get("promedio") if r.get("promedio") is not None else "",
@@ -482,7 +497,7 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                         } for r in hist_acad], use_container_width=True, hide_index=True)
                     else:
                         st.info("No hay historial académico visible para esta cuenta.")
-                    if rol_admin:
+                    if hist_acad is not None and rol_admin:
                         with st.expander("➕ Añadir periodo académico"):
                             with st.form(f"form_academico_{jugador_id}"):
                                 periodo = st.text_input("Periodo académico *", placeholder="2026-2027")
@@ -523,7 +538,9 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
             with tab_eval:
                 st.markdown("#### Evolución del deportista")
                 st.caption("Técnica y actitudinal se califican de 1 a 10. En pruebas físicas registra los segundos obtenidos; un tiempo menor es mejor. Course Navette se registra como nivel/etapa alcanzada; un valor mayor es mejor.")
-                if evals:
+                if evals is None:
+                    st.error("No se pudieron cargar las evaluaciones. Reintenta recargando la página.")
+                elif evals:
                     grafico_evolucion(evals, [("pase_efectividad", "Pase"), ("conduccion", "Conducción"), ("tiros_efectividad", "Tiros al arco")], "Evolución técnica · escala 1 a 10")
                     grafico_evolucion(evals, [("disciplina", "Disciplina"), ("compromiso", "Compromiso"), ("responsabilidad", "Responsabilidad"), ("trabajo_equipo", "Trabajo en equipo"), ("capacidad_esfuerzo", "Capacidad de esfuerzo")], "Evolución actitudinal · escala 1 a 10")
                     grafico_evolucion(evals, [("velocidad_10m", "10 m (s)"), ("velocidad_20m", "20 m (s)"), ("illinois", "Illinois (s)")], "Pruebas de velocidad y agilidad", "En estas pruebas, la mejora normalmente se observa cuando disminuye el tiempo.")
@@ -542,7 +559,7 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                             st.write(f"**Recomendaciones:** {ev.get('recomendaciones') or '—'}")
                 else:
                     st.info("No hay evaluaciones registradas. Cuando guardes la primera, aparecerá aquí; con dos o más fechas podrás observar la evolución.")
-                if puede_editar(rol):
+                if evals is not None and puede_editar(rol):
                     with st.expander("➕ Registrar nueva evaluación"):
                         with st.form(f"form_eval_detallada_{jugador_id}"):
                             fecha_eval = st.date_input("Fecha de evaluación", value=date.today(), format="DD/MM/YYYY")
@@ -601,7 +618,9 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
 
             with tab_evidencias:
                 st.markdown("#### Material de seguimiento")
-                if evidencias:
+                if evidencias is None:
+                    st.error("No se pudieron cargar las evidencias. Reintenta recargando la página.")
+                elif evidencias:
                     for ev in evidencias:
                         with st.expander(f"{ev.get('titulo', 'Evidencia')} · {ev.get('tipo', 'otro')}"):
                             st.write(f"**Fecha:** {fecha_legible(ev.get('fecha_evidencia'))}")
@@ -612,7 +631,7 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                                 st.caption("Marcada para posible perfil compartible; confirma autorización antes de divulgarla.")
                 else:
                     st.info("No hay evidencias registradas.")
-                if puede_editar(rol):
+                if evidencias is not None and puede_editar(rol):
                     with st.expander("➕ Añadir evidencia"):
                         with st.form(f"form_evidencia_{jugador_id}"):
                             titulo_ev = st.text_input("Título *")
@@ -647,13 +666,22 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                 if rol_padre:
                     incluir_academico_pdf = False
                     incluir_eval_pdf = False
-                try:
-                    pdf_bytes = generar_pdf(jugador, hist_acad, hist_dep, evals, evidencias, incluir_academico_pdf, incluir_eval_pdf)
-                    prefijo_pdf = "surcos" if (jugador.get("institucion") or INSTITUCION_JUVENTUD) == INSTITUCION_SURCOS else "juventud"
-                    nombre_archivo = f"expediente_{prefijo_pdf}_{jugador.get('apellidos','').replace(' ','_')}_{jugador.get('nombres','').replace(' ','_')}.pdf"
-                    st.download_button("⬇️ Descargar expediente PDF", data=pdf_bytes, file_name=nombre_archivo, mime="application/pdf", use_container_width=True)
-                except Exception:
-                    st.error("No se pudo generar el PDF. Revisa que reportlab esté instalado en requirements.txt.")
+                fuentes_pdf = [hist_dep, evidencias]
+                if incluir_academico_pdf:
+                    fuentes_pdf.append(hist_acad)
+                if incluir_eval_pdf:
+                    fuentes_pdf.append(evals)
+                if any(datos is None for datos in fuentes_pdf):
+                    st.error("No se puede exportar: faltan datos que no pudieron cargarse. Reintenta recargando la página.")
+                else:
+                    try:
+                        pdf_bytes = generar_pdf(jugador, hist_acad, hist_dep, evals, evidencias, incluir_academico_pdf, incluir_eval_pdf)
+                        prefijo_pdf = "surcos" if (jugador.get("institucion") or INSTITUCION_JUVENTUD) == INSTITUCION_SURCOS else "juventud"
+                        nombre_archivo = f"expediente_{prefijo_pdf}_{jugador.get('apellidos','').replace(' ','_')}_{jugador.get('nombres','').replace(' ','_')}.pdf"
+                        st.download_button("⬇️ Descargar expediente PDF", data=pdf_bytes, file_name=nombre_archivo, mime="application/pdf", use_container_width=True)
+                    except Exception as error:
+                        logging.getLogger(__name__).warning("Generación de PDF fallida (%s)", type(error).__name__)
+                        st.error("No se pudo generar el PDF. Reintenta y, si el problema continúa, contacta al administrador.")
 
 # ============================================================
 # USUARIOS Y REPRESENTANTES

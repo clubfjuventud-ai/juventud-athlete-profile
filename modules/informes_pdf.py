@@ -1,4 +1,5 @@
 import io
+from xml.sax.saxutils import escape
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
@@ -8,6 +9,17 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 
 from modules.configuracion import INSTITUCION_JUVENTUD, INSTITUCION_SURCOS
 from modules.utilidades import nombre_jugador, categoria_jugador, fecha_legible, ruta_logo
+
+def _escapar_datos(valor):
+    """Copia los datos y neutraliza marcado antes de pasarlos a Paragraph."""
+    if isinstance(valor, str):
+        return escape(valor)
+    if isinstance(valor, dict):
+        return {clave: _escapar_datos(dato) for clave, dato in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [_escapar_datos(dato) for dato in valor]
+    return valor
+
 
 def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir_academico, incluir_evaluaciones):
     """Genera un PDF interno. El usuario debe verificar autorizaciones antes de compartirlo."""
@@ -46,6 +58,9 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
     institucion = jugador.get("institucion") or INSTITUCION_JUVENTUD
     nombre_marca = "COLEGIO SURCOS" if institucion == INSTITUCION_SURCOS else "CLUB JUVENTUD"
     logo = ruta_logo(institucion)
+    jugador, academico, deportivo, evaluaciones, evidencias = _escapar_datos(
+        [jugador, academico, deportivo, evaluaciones, evidencias]
+    )
     elementos = []
     if logo:
         imagen_logo = PDFImage(str(logo), width=3.0 * cm, height=3.0 * cm, kind="bound", hAlign="CENTER")
@@ -54,7 +69,7 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
     elementos.extend([
         Paragraph(nombre_marca, estilos["Marca"]),
         Paragraph("EXPEDIENTE DEL ESTUDIANTE-ATLETA", estilos["TituloClub"]),
-        Paragraph(f"{institucion.upper()} · DOCUMENTO DE USO INTERNO", estilos["SubtituloClub"]),
+        Paragraph(f"{escape(institucion.upper())} · DOCUMENTO DE USO INTERNO", estilos["SubtituloClub"]),
     ])
 
     def tabla_datos(filas, anchos=None):
