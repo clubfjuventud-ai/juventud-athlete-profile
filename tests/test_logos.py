@@ -115,5 +115,60 @@ class LogosInstitucionales(unittest.TestCase):
         self.assertEqual({elemento.value for elemento in app.text}, {INSTITUCION_JUVENTUD, INSTITUCION_SURCOS})
 
 
+class LogosOriginales(unittest.TestCase):
+    def test_png_originales_resuelven_y_se_decodifican(self):
+        for institucion in (INSTITUCION_JUVENTUD, INSTITUCION_SURCOS):
+            with self.subTest(institucion=institucion):
+                ruta = utilidades.ruta_logo(institucion)
+                self.assertIsNotNone(ruta)
+                with Image.open(ruta) as imagen:
+                    self.assertEqual(imagen.format, 'PNG')
+                    self.assertGreater(imagen.width, 0)
+                    self.assertGreater(imagen.height, 0)
+                    imagen.verify()
+
+    def test_acceso_con_png_originales(self):
+        app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'app.py'), default_timeout=15).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(len(app.get('image')), 2)
+
+    def test_menu_fichas_y_administracion_con_png_originales(self):
+        for seccion in ('Jugadores Juventud', 'Colegio Surcos', 'Usuarios y representantes'):
+            with self.subTest(seccion=seccion):
+                cliente = Cliente(rol='administrador')
+                if seccion == 'Colegio Surcos':
+                    for jugador in cliente.datos['jugadores']:
+                        jugador['institucion'] = INSTITUCION_SURCOS
+                app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'app.py'), default_timeout=15)
+                app.session_state.sesion = SimpleNamespace(user=SimpleNamespace(id='prueba', email='prueba@example.invalid'))
+                app.session_state.menu_principal = seccion
+                with patch.object(autenticacion, 'conectar_supabase', return_value=cliente):
+                    app.run()
+                self.assertEqual(len(app.exception), 0, str(app.exception))
+                self.assertEqual(len(app.get('image')), 6)
+                self.assertEqual(len(app.sidebar.get('image')), 2)
+                self.assertEqual(len(app.error), 0)
+
+    def test_pdf_incrusta_original_correcto_sin_deformarlo(self):
+        constructor = informes_pdf.PDFImage
+        for institucion in (INSTITUCION_JUVENTUD, INSTITUCION_SURCOS):
+            with self.subTest(institucion=institucion):
+                ruta = utilidades.ruta_logo(institucion)
+                with Image.open(ruta) as original:
+                    proporcion = original.width / original.height
+                imagenes = []
+                def capturar(*args, **kwargs):
+                    self.assertEqual(Path(args[0]), ruta)
+                    imagen = constructor(*args, **kwargs)
+                    imagenes.append(imagen)
+                    return imagen
+                with patch.object(informes_pdf, 'PDFImage', side_effect=capturar):
+                    pdf = informes_pdf.generar_pdf({'institucion': institucion}, [], [], [], [], False, False)
+                self.assertEqual(len(imagenes), 1)
+                self.assertAlmostEqual(imagenes[0].drawWidth / imagenes[0].drawHeight, proporcion)
+                self.assertTrue(pdf.startswith(b'%PDF'))
+                self.assertIn(b'/Subtype /Image', pdf)
+
+
 if __name__ == '__main__':
     unittest.main()
