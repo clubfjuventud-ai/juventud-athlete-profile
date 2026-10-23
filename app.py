@@ -20,6 +20,7 @@ from modules.utilidades import (
     grafico_evolucion, fecha_legible, puede_editar, opciones_expediente, obtener_paginas
 )
 from modules.informes_pdf import generar_pdf
+from modules.evaluaciones_visuales import mostrar_panel_evaluaciones
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -537,22 +538,7 @@ elif seccion in ("Jugadores Juventud", "Colegio Surcos"):
                 if evals is None:
                     st.error("No se pudieron cargar las evaluaciones. Reintenta recargando la página.")
                 elif evals:
-                    grafico_evolucion(evals, [("pase_efectividad", "Pase"), ("conduccion", "Conducción"), ("tiros_efectividad", "Tiros al arco")], "Evolución técnica · escala 1 a 10")
-                    grafico_evolucion(evals, [("disciplina", "Disciplina"), ("compromiso", "Compromiso"), ("responsabilidad", "Responsabilidad"), ("trabajo_equipo", "Trabajo en equipo"), ("capacidad_esfuerzo", "Capacidad de esfuerzo")], "Evolución actitudinal · escala 1 a 10")
-                    grafico_evolucion(evals, [("velocidad_10m", "10 m (s)"), ("velocidad_20m", "20 m (s)"), ("illinois", "Illinois (s)")], "Pruebas de velocidad y agilidad", "En estas pruebas, la mejora normalmente se observa cuando disminuye el tiempo.")
-                    grafico_evolucion(evals, [("course_navette", "Nivel/etapa")], "Course Navette")
-                    st.markdown("#### Evaluaciones registradas")
-                    for ev in sorted(evals, key=lambda x: str(x.get("fecha_evaluacion") or ""), reverse=True):
-                        with st.expander(f"Evaluación · {fecha_legible(ev.get('fecha_evaluacion'))}"):
-                            c1, c2, c3 = st.columns(3)
-                            c1.metric("Efectividad de pase", ev.get("pase_efectividad") if ev.get("pase_efectividad") is not None else "—")
-                            c2.metric("Conducción", ev.get("conduccion") if ev.get("conduccion") is not None else "—")
-                            c3.metric("Efectividad de tiros", ev.get("tiros_efectividad") if ev.get("tiros_efectividad") is not None else "—")
-                            st.write(f"**Físicas:** 10 m: {ev.get('velocidad_10m') if ev.get('velocidad_10m') is not None else '—'} s · 20 m: {ev.get('velocidad_20m') if ev.get('velocidad_20m') is not None else '—'} s · Illinois: {ev.get('illinois') if ev.get('illinois') is not None else '—'} s · Course Navette: {ev.get('course_navette') if ev.get('course_navette') is not None else '—'}")
-                            st.write(f"**Actitudinal:** Disciplina {ev.get('disciplina') if ev.get('disciplina') is not None else '—'} · Compromiso {ev.get('compromiso') if ev.get('compromiso') is not None else '—'} · Responsabilidad {ev.get('responsabilidad') if ev.get('responsabilidad') is not None else '—'} · Trabajo en equipo {ev.get('trabajo_equipo') if ev.get('trabajo_equipo') is not None else '—'} · Esfuerzo {ev.get('capacidad_esfuerzo') if ev.get('capacidad_esfuerzo') is not None else '—'}")
-                            st.write(f"**Fortalezas:** {ev.get('fortalezas') or '—'}")
-                            st.write(f"**Aspectos por mejorar:** {ev.get('aspectos_mejora') or '—'}")
-                            st.write(f"**Recomendaciones:** {ev.get('recomendaciones') or '—'}")
+                    mostrar_panel_evaluaciones(evals, jugador)
                 else:
                     st.info("No hay evaluaciones registradas. Cuando guardes la primera, aparecerá aquí; con dos o más fechas podrás observar la evolución.")
                 if evals is not None and puede_editar(rol):

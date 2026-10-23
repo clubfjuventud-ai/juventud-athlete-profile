@@ -7,6 +7,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, Image as PDFImage
 
+from modules.evaluaciones_visuales import ordenar_evaluaciones, cuadro_evaluacion_pdf
 from modules.configuracion import INSTITUCION_JUVENTUD, INSTITUCION_SURCOS
 from modules.utilidades import nombre_jugador, categoria_jugador, fecha_legible, ruta_logo
 
@@ -176,23 +177,14 @@ def generar_pdf(jugador, academico, deportivo, evaluaciones, evidencias, incluir
     if incluir_evaluaciones:
         elementos.append(Paragraph("4. EVALUACIONES INTEGRALES · CONFIDENCIAL", estilos["SeccionClub"]))
         if evaluaciones:
-            for ev in evaluaciones:
-                elementos.append(Paragraph(f"<b>Fecha:</b> {fecha_legible(ev.get('fecha_evaluacion'))}", estilos["TextoPequeno"]))
-                metricas = [
-                    ("Efectividad de pase (1-10)", ev.get("pase_efectividad")),
-                    ("Conducción (1-10)", ev.get("conduccion")),
-                    ("Efectividad de tiros al arco (1-10)", ev.get("tiros_efectividad")),
-                    ("Velocidad 10 m (segundos)", ev.get("velocidad_10m")),
-                    ("Velocidad 20 m (segundos)", ev.get("velocidad_20m")),
-                    ("Illinois (segundos)", ev.get("illinois")),
-                    ("Course Navette (nivel/etapa)", ev.get("course_navette")),
-                    ("Disciplina (1-10)", ev.get("disciplina")),
-                    ("Compromiso (1-10)", ev.get("compromiso")),
-                    ("Responsabilidad (1-10)", ev.get("responsabilidad")),
-                    ("Trabajo en equipo (1-10)", ev.get("trabajo_equipo")),
-                    ("Capacidad de esfuerzo (1-10)", ev.get("capacidad_esfuerzo")),
-                ]
-                elementos.append(tabla_datos([(a, b if b is not None else "—") for a, b in metricas]))
+            ordenadas = ordenar_evaluaciones(evaluaciones)
+            for indice, ev in enumerate(ordenadas):
+                anterior = ordenadas[indice + 1] if indice + 1 < len(ordenadas) else None
+                elementos.append(KeepTogether([
+                    Paragraph(f"<b>Fecha:</b> {fecha_legible(ev.get('fecha_evaluacion'))}", estilos["TextoPequeno"]),
+                    cuadro_evaluacion_pdf(ev, anterior, paleta),
+                    Spacer(1, 6),
+                ]))
                 elementos.append(Paragraph(f"Fortalezas: {ev.get('fortalezas') or '—'}", estilos["TextoPequeno"]))
                 elementos.append(Paragraph(f"Aspectos por mejorar: {ev.get('aspectos_mejora') or '—'}", estilos["TextoPequeno"]))
                 elementos.append(Paragraph(f"Recomendaciones: {ev.get('recomendaciones') or '—'}", estilos["TextoPequeno"]))

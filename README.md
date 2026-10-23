@@ -9,6 +9,7 @@ Esta versión separa funciones existentes de `app.py` en módulos, procurando co
 - `modules/autenticacion.py`: conexión Supabase y cierre de sesión.
 - `modules/utilidades.py`: consultas y funciones auxiliares de la interfaz.
 - `modules/informes_pdf.py`: generación del expediente PDF.
+- `modules/evaluaciones_visuales.py`: panel de atributos, comparación por fecha y cuadros vectoriales de evaluación.
 - `assets/`: coloca aquí los logos originales `logo_juventud.png` y `logo_surcos.png`.
 
 ## Configuración local
@@ -24,3 +25,7 @@ No publiques `secrets.toml`, claves privadas ni contraseñas en GitHub.
 ## Antes de desplegar
 
 Prueba esta versión en una rama separada o en una copia del repositorio. Esta etapa es una reorganización del código; todavía no implementa la gestión de usuarios, los permisos nuevos, las pruebas EIR/cualidades volitivas ni la carga de entrenamientos. Esas funciones requieren una siguiente etapa y revisión del esquema/políticas RLS de Supabase.
+
+## Evaluaciones visuales
+
+La ficha muestra un radar de las ocho puntuaciones técnicas y actitudinales sobre 10. Elige una evaluación y otra fecha de referencia para comparar el perfil y las variaciones. Las pruebas físicas se muestran en segundos o nivel/etapa; no se convierten en notas ni se mezclan en una calificación global. Un dato ausente no equivale a cero. Los PDF incluyen cuadros vectoriales con comparación respecto a la evaluación anterior.
